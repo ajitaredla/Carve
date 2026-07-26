@@ -108,7 +108,7 @@ export interface BrandIntakeValidationResult {
 /** One error message per field (first issue wins) — enough for inline form
  * feedback without needing the full Zod issue array on the client. */
 export function validateBrandIntake(
-  input: BrandIntakeInput,
+  input: unknown,
 ): BrandIntakeValidationResult {
   const result = BrandIntakeSchema.safeParse(input);
 

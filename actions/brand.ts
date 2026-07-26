@@ -43,10 +43,7 @@ import { generateBlockerStatement } from "@/actions/assessment";
 import { toFriendlyGenerationError } from "@/lib/errors/friendly";
 import {
   validateBrandIntake,
-  type BrandIntakeInput,
 } from "@/lib/intake/brand-intake-schema";
-
-export type { BrandIntakeInput };
 
 export type SaveBrandIntakeResult =
   | {
@@ -63,7 +60,7 @@ export type SaveBrandIntakeResult =
   | { status: "error"; message: string };
 
 export async function saveBrandIntakeAndAssess(
-  rawInput: BrandIntakeInput,
+  rawInput: unknown,
 ): Promise<SaveBrandIntakeResult> {
   const validation = validateBrandIntake(rawInput);
   if (!validation.success || !validation.data) {
