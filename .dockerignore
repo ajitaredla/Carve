@@ -1,0 +1,14 @@
+# Keep build contexts small and ensure local credentials never enter an image.
+.git
+.github
+.factory
+.claude
+.env
+.env.*
+!.env.example
+node_modules
+.next
+coverage
+.scratch
+*.log
+.DS_Store
