@@ -1,0 +1,44 @@
+# carve-cloud — shared Managed Agents environment for both Carve agents (task 5.3)
+#
+# Apply with the `ant` CLI (control plane):
+#   ant beta:environments create < agents/carve-cloud.environment.yaml
+# Store the returned environment id (see .env.example → CARVE_ENVIRONMENT_ID).
+# Both carve-generator and carve-verifier sessions run in this one environment.
+#
+# type: cloud — Anthropic hosts the per-session container. Carve needs no
+# self-hosted sandbox: its four MCP tools are read-only HTTP calls to the Carve
+# MCP server (Prisma reads + one pure calculation), not filesystem or bash work,
+# so there is nothing that must run on Carve's own infrastructure.
+#
+# networking: limited, allow_mcp_servers: true (security QC pass, subtask 5.6 —
+# changed from `unrestricted`, live resource PATCHed and re-verified via GET).
+#
+# History: the original config here was `unrestricted`, justified by a
+# now-superseded note claiming the `limited` alternative needed an
+# `allowed_hosts` list synced to the eventual deployment domain. That was
+# wrong: `allow_mcp_servers: true` grants reachability to the agent's declared
+# MCP server directly, with no host list and no ongoing maintenance. The
+# code-reviewer pass (task 5.6, quality half) caught the inconsistency and
+# flagged it as a security/product judgment call rather than resolving it,
+# noting the standing-grant risk: this environment is shared across both
+# current agents and any future ones placed here, and `unrestricted` would be
+# silently inherited by a future agent granted `agent_toolset_20260401`
+# (bash/web_fetch/code execution) with no separate review trigger forcing a
+# second look.
+#
+# This QC pass (security half) made the call: tighten now. `limited` +
+# `allow_mcp_servers: true` covers every need both current agents have
+# (mcp_toolset only, proxied through Anthropic's orchestration layer, not
+# reachable via this networking setting anyway) with zero functional
+# downside, and it closes the standing-grant gap for good rather than leaving
+# it as a landmine for whoever adds the next agent to this environment. If a
+# future agent needs broader egress (bash, web_fetch, arbitrary HTTP), that
+# is exactly the kind of change that should force a fresh security review of
+# this environment's networking — not something that should already be
+# sitting there pre-granted.
+name: carve-cloud
+config:
+  type: cloud
+  networking:
+    type: limited
+    allow_mcp_servers: true

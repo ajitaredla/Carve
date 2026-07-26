@@ -1,0 +1,223 @@
+// Carve v1 schema — PO-path core loop only (PRD v3.1 §12 Phases 0-4).
+// Post-v1 tables (Stripe/billing, broker dashboard, Investor Readiness Test,
+// stay-in tracking, LEAP alerts, competitive shelf positioning, cross-brand
+// benchmarking) are intentionally not modeled yet.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Founder {
+  // Always set explicitly to the corresponding Supabase Auth user's UUID at
+  // provisioning time — never left to auto-generate. See
+  // lib/auth/current-brand.ts for why this convention is load-bearing for
+  // data isolation, not just tidiness.
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  brand Brand?
+
+  @@map("founders")
+}
+
+// Certifications a brand can hold / a retailer can require (FR-01 Certification
+// Readiness, 18%). Matches lib/scoring/types.ts's CertificationType string
+// union field-for-field — keep both in sync if this ever changes.
+enum Certification {
+  usda_organic
+  non_gmo
+  gluten_free
+  sqf
+  brc
+}
+
+model Brand {
+  id               String   @id @default(uuid())
+  founderId        String   @unique @map("founder_id")
+  name             String
+  category         String
+  dtcAnnualRevenue Decimal  @map("dtc_annual_revenue")
+  description      String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Founder-entered scoring facts (FR-01's six dimensions), collected via the
+  // task 7.1 intake form. Added post-hoc (task 6.0's foundation work) once it
+  // became clear the original Brand model had nowhere to persist the inputs
+  // lib/scoring/map-retailer-requirements.ts's toScoringInput() needs — see
+  // that file's header for the full reasoning. One brand per founder (v1
+  // scope), so these live directly on Brand rather than a separate 1:1 table,
+  // consistent with this schema's existing simplification calls (CostWaterfall
+  // is 1:1 on Assessment, not a scenario-history table).
+
+  // Margin Readiness (27%)
+  /// Wholesale (brand-to-retailer/distributor) unit price, in USD.
+  wholesalePrice Decimal @map("wholesale_price")
+  /// Expected/suggested retail shelf price, in USD.
+  retailPrice    Decimal @map("retail_price")
+
+  // Distributor Readiness (23%)
+  hasKeheRelationship Boolean @default(false) @map("has_kehe_relationship")
+  hasUnfiRelationship Boolean @default(false) @map("has_unfi_relationship")
+  ediCapable          Boolean @default(false) @map("edi_capable")
+  eftCapable          Boolean @default(false) @map("eft_capable")
+
+  // Certification Readiness (18%)
+  heldCertifications Certification[] @map("held_certifications")
+
+  // Velocity (10%)
+  /// True if the brand has no retail placement yet — no UPSPW data exists.
+  isDtcOnly            Boolean  @default(true) @map("is_dtc_only")
+  /// UPSPW from existing retail placement. Null/ignored when isDtcOnly.
+  unitsPerStorePerWeek Decimal? @map("units_per_store_per_week")
+
+  // Fulfillment Readiness (9%)
+  hasCoManufacturer            Boolean @default(false) @map("has_co_manufacturer")
+  /// Current production lead time, in days.
+  leadTimeDays                 Int     @map("lead_time_days")
+  hasRegionalProductionCapacity Boolean @default(false) @map("has_regional_production_capacity")
+
+  founder     Founder      @relation(fields: [founderId], references: [id])
+  assessments Assessment[]
+  outcomes    Outcome[]
+
+  @@map("brands")
+}
+
+model Retailer {
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  name         String
+  requirements Json
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  assessments Assessment[]
+  outcomes    Outcome[]
+
+  @@map("retailers")
+}
+
+model Assessment {
+  id                  String @id @default(uuid())
+  brandId             String @map("brand_id")
+  retailerId          String @map("retailer_id")
+  retailerDataVersion String @map("retailer_data_version")
+
+  overallScore       Int @map("overall_score")
+  marginScore        Int @map("margin_score")
+  distributorScore   Int @map("distributor_score")
+  certificationScore Int @map("certification_score")
+  timingScore        Int @map("timing_score")
+  velocityScore      Int @map("velocity_score")
+  fulfillmentScore   Int @map("fulfillment_score")
+
+  blockerDimension String @map("blocker_dimension")
+  blockerStatement String @map("blocker_statement")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  brand          Brand               @relation(fields: [brandId], references: [id])
+  retailer       Retailer            @relation(fields: [retailerId], references: [id])
+  costWaterfall  CostWaterfall?
+  documents      GeneratedDocument[]
+  outcomes       Outcome[]
+  generationLogs GenerationLog[]
+
+  // One current assessment per brand+retailer pair (resolves task 1.0's open
+  // product question: v1 supports multiple retailers per brand — one
+  // Assessment row per retailer — but not an unbounded history per retailer;
+  // re-scoring upserts the existing row rather than creating a new one, same
+  // "single blocker at a time" simplicity as FR-03 itself). Also closes a
+  // real race-condition gap: lib/assessment/persist.ts previously implemented
+  // this invariant at the application level only (`findFirst` then
+  // `create`/`update`), which a concurrent double-submit could violate. This
+  // constraint lets that become a real, atomic `upsert()`.
+  @@unique([brandId, retailerId])
+  @@map("assessments")
+}
+
+model CostWaterfall {
+  id           String @id @default(uuid())
+  assessmentId String @unique @map("assessment_id")
+
+  factoryCost          Decimal @map("factory_cost")
+  coPackingFee         Decimal @map("co_packing_fee")
+  freightToDc          Decimal @map("freight_to_dc")
+  distributorMarkupPct Decimal @map("distributor_markup_pct")
+  retailerMarginPct    Decimal @map("retailer_margin_pct")
+  chargebackEstimate   Decimal @map("chargeback_estimate")
+  msrp                 Decimal
+  founderMarginPct     Decimal @map("founder_margin_pct")
+
+  investorVerdict  String @map("investor_verdict") // pass | marginal | fail
+  verdictStatement String @map("verdict_statement")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  assessment     Assessment      @relation(fields: [assessmentId], references: [id])
+  generationLogs GenerationLog[]
+
+  @@map("cost_waterfalls")
+}
+
+model GeneratedDocument {
+  id              String @id @default(uuid())
+  assessmentId    String @map("assessment_id")
+  documentType    String @map("document_type") // kehe_application | sprouts_checklist | wf_pitch_brief | sell_sheet_outline | unfi_application | buyer_outreach_email
+  content         String
+  generationLogId String @unique @map("generation_log_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  assessment    Assessment    @relation(fields: [assessmentId], references: [id])
+  generationLog GenerationLog @relation(fields: [generationLogId], references: [id])
+
+  @@map("generated_documents")
+}
+
+model Outcome {
+  id           String  @id @default(uuid())
+  brandId      String  @map("brand_id")
+  retailerId   String  @map("retailer_id")
+  assessmentId String? @map("assessment_id")
+
+  status String  @default("pending") // won | rejected | pending
+  notes  String?
+
+  loggedAt DateTime @default(now()) @map("logged_at")
+
+  brand      Brand       @relation(fields: [brandId], references: [id])
+  retailer   Retailer    @relation(fields: [retailerId], references: [id])
+  assessment Assessment? @relation(fields: [assessmentId], references: [id])
+
+  @@map("outcomes")
+}
+
+// One row per AI call — both the primary generation and its independent
+// verification pass (PRD §10.1). This is the full provenance trail.
+model GenerationLog {
+  id                  String @id @default(uuid())
+  surface             String // blocker_statement | waterfall_verdict | kehe_application | sprouts_checklist | wf_pitch_brief | sell_sheet_outline | unfi_application | buyer_outreach_email
+  promptVersion       String @map("prompt_version")
+  retailerDataVersion String @map("retailer_data_version")
+  brandInputSnapshot  Json   @map("brand_input_snapshot")
+  model               String
+  output              String
+  verificationResult  String @map("verification_result") // pass | flagged | regenerated | failed
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  assessmentId    String? @map("assessment_id")
+  costWaterfallId String? @map("cost_waterfall_id")
+
+  assessment        Assessment?        @relation(fields: [assessmentId], references: [id])
+  costWaterfall     CostWaterfall?     @relation(fields: [costWaterfallId], references: [id])
+  generatedDocument GeneratedDocument?
+
+  @@map("generation_logs")
+}
