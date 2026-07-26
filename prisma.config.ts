@@ -12,6 +12,10 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: env("DIRECT_URL"),
+    // Local Supabase work uses a direct connection for Prisma CLI commands.
+    // The Azure classroom platform exposes only DATABASE_URL, so use it as a
+    // safe deployment fallback rather than making every container crash before
+    // `migrate deploy` can run.
+    url: process.env.DIRECT_URL ?? env("DATABASE_URL"),
   },
 });
