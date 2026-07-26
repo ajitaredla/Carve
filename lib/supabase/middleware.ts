@@ -9,7 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * `(dashboard)` don't appear in the URL, so this list is matched against the
  * actual pathname, not the file-system group name.
  */
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/", "/login", "/signup", "/auth/callback"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(

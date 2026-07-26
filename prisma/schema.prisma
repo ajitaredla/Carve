@@ -85,8 +85,38 @@ model Brand {
   founder     Founder      @relation(fields: [founderId], references: [id])
   assessments Assessment[]
   outcomes    Outcome[]
+  chatConversations ChatConversation[]
 
   @@map("brands")
+}
+
+model ChatConversation {
+  id        String   @id @default(uuid())
+  brandId   String   @map("brand_id")
+  title     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  brand    Brand         @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([brandId, updatedAt])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  role           String
+  content        String
+  sources        Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+  @@map("chat_messages")
 }
 
 model Retailer {

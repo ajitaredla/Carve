@@ -30,8 +30,11 @@ import "./globals.css";
 // distinctions until licensed local font files are added.
 
 export const metadata: Metadata = {
-  title: "Carve",
-  description: "AI retail-readiness platform for CPG brands",
+  title: {
+    default: "Carve — Retail readiness for CPG brands",
+    template: "%s | Carve",
+  },
+  description: "Turn your next retail opportunity into a clear plan.",
 };
 
 export default function RootLayout({

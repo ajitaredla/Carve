@@ -102,10 +102,9 @@ const PROMPT_VERSION = "v1";
 // here — see that file's header. This module re-exports ONLY the
 // `DocumentType` TYPE below (erased at compile time, exempt from `"use
 // server"`'s "every export must be an async function" rule) so existing
-// `import { type DocumentType } from "@/actions/documents"` call sites keep
-// working; it does NOT re-export the `DOCUMENT_TYPES` runtime array itself
-// — import that from `@/lib/documents/types` directly.
-export type { DocumentType };
+// It does not re-export either value or type: server-action modules must stay
+// runtime-only under Next's server-action transform. UI code imports the
+// canonical type from `@/lib/documents/types` directly.
 
 export type GenerateDocumentResult =
   | { status: "final"; documentType: DocumentType; documentId: string; content: string }

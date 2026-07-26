@@ -1,0 +1,28 @@
+name: Send weekly Carve actions
+
+on:
+  schedule:
+    # 14:00 UTC is 08:00 CST / 09:00 CDT on Monday.
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger the authenticated Carve weekly-action job
+        env:
+          CARVE_APP_URL: ${{ secrets.CARVE_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CARVE_APP_URL"
+          test -n "$CRON_SECRET"
+          curl --fail --show-error --silent \
+            --retry 2 \
+            --retry-all-errors \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$CARVE_APP_URL/api/cron/weekly-actions"

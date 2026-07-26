@@ -38,9 +38,9 @@ import {
   generateSproutsChecklist,
   generateUnfiApplication,
   generateWfPitchBrief,
-  type DocumentType,
   type GenerateDocumentResult,
 } from "@/actions/documents";
+import type { DocumentType } from "@/lib/documents/types";
 import { toFriendlyGenerationError } from "@/lib/errors/friendly";
 
 export type SafeBlockerStatementResult =

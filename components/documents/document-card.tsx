@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { DocumentType } from "@/actions/documents";
+import type { DocumentType } from "@/lib/documents/types";
 import type { GenerationDisplayState } from "@/lib/generation-status/display-state";
 import {
   DOCUMENT_TYPE_DESCRIPTIONS,

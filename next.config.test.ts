@@ -1,14 +1,15 @@
-import type { NextConfig } from "next";
+import { describe, expect, it } from "vitest";
 
-const nextConfig: NextConfig = {
-  // Azure Container Apps runs the production image from Next's traced server
-  // output. This keeps the runtime image small and self-contained.
-  output: "standalone",
-  async headers() {
-    return [
-      {
+import nextConfig from "./next.config";
+
+describe("Next production configuration", () => {
+  it("applies the baseline browser security headers to every route", async () => {
+    const rules = await nextConfig.headers?.();
+
+    expect(rules).toEqual([
+      expect.objectContaining({
         source: "/:path*",
-        headers: [
+        headers: expect.arrayContaining([
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           {
@@ -24,10 +25,8 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains",
           },
-        ],
-      },
-    ];
-  },
-};
-
-export default nextConfig;
+        ]),
+      }),
+    ]);
+  });
+});

@@ -529,7 +529,9 @@ export function IntakeForm({
           <div className="max-w-sm space-y-1.5">
             <Label htmlFor="retailerSlug">Retailer</Label>
             <Select
-              value={retailerSlug || undefined}
+              // Keep this controlled from the first render. Passing undefined
+              // for the empty state made Base UI switch modes after selection.
+              value={retailerSlug}
               onValueChange={(value) => setRetailerSlug(String(value))}
             >
               <SelectTrigger id="retailerSlug" className="w-full">

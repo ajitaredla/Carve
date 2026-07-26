@@ -8,9 +8,9 @@ unit economics, generates verified submission materials, and records outcomes.
 
 The v1 core loop is implemented: Supabase authentication, Prisma/Postgres data
 model, scoring, waterfall, MCP-backed generation/verification, and the founder
-dashboard are in the repository. The remaining v1 work is Weekly Action
-Cadence (FR-04), final integrated review, and browser end-to-end tests. See
-[the task list](tasks/tasks-carve-v1.md) for the source-of-truth checklist.
+dashboard, and Weekly Action Cadence (FR-04) are in the repository. The
+remaining v1 work is its final integrated review and browser end-to-end tests.
+See [the task list](tasks/tasks-carve-v1.md) for the source-of-truth checklist.
 
 ## Local development
 
@@ -61,9 +61,20 @@ deployment PR, configure these GitHub **Actions variables**:
 Configure these runtime values as Azure Container App secrets/environment
 variables, never in Git: `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `DATABASE_URL`, `DIRECT_URL` (when different),
-`MCP_SERVER_TOKEN`, `CARVE_ENVIRONMENT_ID`, `CARVE_GENERATOR_AGENT_ID`,
+`ANTHROPIC_API_KEY`, `MCP_SERVER_TOKEN`, `CARVE_ENVIRONMENT_ID`, `CARVE_GENERATOR_AGENT_ID`,
 `CARVE_VERIFIER_AGENT_ID`, and `CARVE_VAULT_ID`. The deploy image applies
 committed Prisma migrations before starting.
+
+For Weekly Action Cadence, configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL`,
+and `CRON_SECRET` as Container App runtime secrets. Configure GitHub Actions
+secrets `CARVE_APP_URL` (the public `https://…` application origin) and the
+same `CRON_SECRET`; `.github/workflows/weekly-actions.yml` invokes the
+authenticated endpoint every Monday at 14:00 UTC.
+
+Use the [production setup guide](docs/production-setup.md) for the exact
+Supabase, Anthropic, Azure, Resend, and GitHub steps. It also calls out the
+separate, source-backed retailer-data seed that must be approved before real
+assessments are used.
 
 After the first successful deployment, update the two Managed Agent YAML
 definitions and the Vault credential from their placeholder MCP URL to
