@@ -1,0 +1,29 @@
+version = 1
+
+[type]
+storage = "labels"
+
+[type.values]
+bug = "bug"
+enhancement = "enhancement"
+documentation = "documentation"
+
+[priority]
+storage = "labels"
+
+[priority.values]
+p0 = "priority:P0"
+p1 = "priority:P1"
+p2 = "priority:P2"
+p3 = "priority:P3"
+
+[status]
+storage = "labels"
+
+[status.values]
+ready_for_spec = "factory:ready-for-spec"
+creating_spec = "factory:creating-spec"
+ready_to_implement = "factory:ready-to-implement"
+implementing = "factory:implementing"
+reviewing = "factory:reviewing"
+done = "factory:done"

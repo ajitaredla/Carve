@@ -1,0 +1,35 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push image in Azure Container Registry
+        run: |
+          az acr build --registry "${{ vars.ACR_NAME }}" \
+            --image "${{ vars.STUDENT }}/web:${{ github.sha }}" .
+      - name: Deploy the immutable image
+        run: |
+          az containerapp update \
+            --resource-group rg-students-platform \
+            --name "ca-${{ vars.STUDENT }}" \
+            --image "${{ vars.ACR_NAME }}.azurecr.io/${{ vars.STUDENT }}/web:${{ github.sha }}"

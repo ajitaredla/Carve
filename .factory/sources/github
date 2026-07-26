@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state=""
+labels=()
+
+while (($# > 0)); do
+  case "$1" in
+    --state|--label)
+      [[ $# -ge 2 ]] || { echo "missing value for $1" >&2; exit 2; }
+      if [[ "$1" == "--state" ]]; then state="$2"; else labels+=("$2"); fi
+      shift 2
+      ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+[[ -n "$state" ]] || { echo "--state is required" >&2; exit 2; }
+
+args=(issue list --state "$state" --limit 1000 --json number,title,body,url,labels)
+for label in "${labels[@]}"; do args+=(--label "$label"); done
+
+FACTORY_SOURCE_STATE="$state" gh "${args[@]}" --jq '
+  {issues: [.[] | {
+    key: ("#" + (.number | tostring)),
+    title: .title,
+    description: (.body // "")[0:2000],
+    state: env.FACTORY_SOURCE_STATE,
+    labels: [.labels[].name],
+    url: .url
+  }]}'
