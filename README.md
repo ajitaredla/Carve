@@ -71,6 +71,11 @@ secrets `CARVE_APP_URL` (the public `https://…` application origin) and the
 same `CRON_SECRET`; `.github/workflows/weekly-actions.yml` invokes the
 authenticated endpoint every Monday at 14:00 UTC.
 
+Use the [production setup guide](docs/production-setup.md) for the exact
+Supabase, Anthropic, Azure, Resend, and GitHub steps. It also calls out the
+separate, source-backed retailer-data seed that must be approved before real
+assessments are used.
+
 After the first successful deployment, update the two Managed Agent YAML
 definitions and the Vault credential from their placeholder MCP URL to
 `https://<your-domain>/api/mcp`, then run the two-tool live MCP session test.
