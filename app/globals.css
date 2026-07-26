@@ -4,188 +4,139 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Carve's production visual system, adapted from the user-owned Lovable
+ * prototype. It intentionally uses local system fallbacks so Azure builds do
+ * not depend on an external font CDN. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Task 7.0 design system: Inter is the base body/UI font. Clash Display
-   * drives large section/hero headings (`font-display`), Clash Grotesk
-   * drives subheadings (`font-heading`), Geist Mono is reserved for
-   * numeric/currency figures (`font-mono` — waterfall line items, scores).
-   * See app/layout.tsx for how each `--font-*` variable is populated and
-   * the Clash Display/Grotesk substitute-font note. */
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-paper: var(--paper);
+  --color-warm: var(--warm);
+  --color-ink: var(--ink);
+  --color-orange: var(--orange);
+  --color-orange-lt: var(--orange-lt);
+  --color-rust: var(--rust);
+  --color-green: var(--green);
+  --color-line: var(--line);
+  --color-muted-ink: var(--muted-ink);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-clash-display);
   --font-heading: var(--font-clash-grotesk);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  /* --radius:24px is the literal curious.pm token (task 7.0 — non-negotiable
-   * base value). The derived scale below is intentionally NOT a flat
-   * multiplier of --radius (0.6x/0.8x/1.4x/1.8x/2.2x/2.6x, shadcn's
-   * default formula): at a 24px base that formula's top end lands on a
-   * 62.4px 4xl radius, which reads as an ellipse/pill on anything wider
-   * than a small chip, not a "rounded card." Using fixed additive steps
-   * instead keeps the "very rounded, editorial" character curious.pm has
-   * at every size without the top of the scale running away. */
-  --radius-sm: calc(var(--radius) - 10px);
+  --radius-sm: calc(var(--radius) - 8px);
   --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 8px);
-  --radius-2xl: calc(var(--radius) + 16px);
-  --radius-3xl: calc(var(--radius) + 24px);
-  --radius-4xl: calc(var(--radius) + 32px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: calc(var(--radius) + 12px);
 }
 
-/**
- * curious.pm theme (task 7.0 — exact tokens from .scratch/curious-pm-design-
- * tokens.md, extracted from curious.pm's live compiled CSS). Warm cream +
- * deep olive + golden-amber accent, near-black high-contrast borders,
- * 24px base radius. NOT the shadcn default oklch neutral theme.
- *
- * `--card`/`--popover`/`--secondary` (and their `-foreground` pairs) aren't
- * in curious.pm's token doc — that site doesn't use shadcn's card/popover
- * primitives the same way. Derived here to stay cohesive with the
- * cream/olive/gold palette rather than introducing an unrelated color:
- *   - `--card`/`--popover`: a shade between --background and --muted, so
- *     cards read as subtly elevated off the page without leaving the
- *     palette.
- *   - `--secondary`: a slightly deeper warm beige than --muted, for
- *     secondary buttons/controls that need to sit a step above muted fills.
- *   - `--destructive-foreground`: cream text for use on a solid destructive
- *     fill (button.tsx's own destructive variant uses a tinted
- *     bg-destructive/10 + text-destructive instead, so this mostly backs
- *     other components — alerts, badges — that use a solid destructive fill).
- */
-:root {
-  /* Self-hosted/system fallbacks keep builds network-independent. Replace
-   * these with local @font-face declarations once the licensed fonts land. */
-  --font-inter: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --font-clash-display: Arial, Helvetica, sans-serif;
-  --font-clash-grotesk: Arial, Helvetica, sans-serif;
-  --background: #fffbf3;
-  --foreground: #203208;
-  --card: #faf6ea;
-  --card-foreground: #203208;
-  --popover: #faf6ea;
-  --popover-foreground: #203208;
-  --primary: #fde3aa;
-  --primary-foreground: #1f3a0a;
-  --secondary: #ece7d4;
-  --secondary-foreground: #203208;
-  --muted: #f3f0e3;
-  --muted-foreground: #3b4a2a;
-  --accent: #fbd072;
-  --accent-foreground: #1f3a0a;
-  --destructive: #e63946;
-  --destructive-foreground: #fffbf3;
-  --border: #1a1a1a;
-  --input: #e5e2d6;
-  --ring: #1a1a1a;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 24px;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-/**
- * Dark mode decision (task 7.0): curious.pm ships ONE palette — no `.dark`
- * variant exists anywhere in its compiled CSS (confirmed in
- * .scratch/curious-pm-design-tokens.md: "not dark mode"). Carve also has no
- * dark-mode toggle or `next-themes`-style mechanism anywhere in this
- * codebase today (checked: no `.dark` class is ever applied). Rather than
- * inventing an unspecified dark palette, `.dark` is deliberately set to the
- * SAME cream tokens as `:root`. This is a documented no-op, not an oversight
- * — it exists only so that if a `.dark` class is ever applied by some future
- * addition (e.g. OS-level `prefers-color-scheme` wiring), the app still
- * renders the intended curious.pm look instead of a half-mixed set of old
- * default-shadcn dark oklch grays fighting the new light-theme component
- * classes (several of which, e.g. button.tsx, have their own `dark:`
- * utility variants). Revisit if/when Carve actually designs a real dark
- * mode — that's a new design decision, not something to reverse-engineer
- * from curious.pm, which doesn't have one.
- */
+:root,
 .dark {
-  --background: #fffbf3;
-  --foreground: #203208;
-  --card: #faf6ea;
-  --card-foreground: #203208;
-  --popover: #faf6ea;
-  --popover-foreground: #203208;
-  --primary: #fde3aa;
-  --primary-foreground: #1f3a0a;
-  --secondary: #ece7d4;
-  --secondary-foreground: #203208;
-  --muted: #f3f0e3;
-  --muted-foreground: #3b4a2a;
-  --accent: #fbd072;
-  --accent-foreground: #1f3a0a;
-  --destructive: #e63946;
-  --destructive-foreground: #fffbf3;
-  --border: #1a1a1a;
-  --input: #e5e2d6;
-  --ring: #1a1a1a;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --font-inter: "DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-clash-display: Georgia, "Times New Roman", serif;
+  --font-clash-grotesk: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --paper: #faf8f5;
+  --warm: #f5f0e8;
+  --ink: #1a1410;
+  --orange: #e8622a;
+  --orange-lt: #fdf0eb;
+  --rust: #c04e1e;
+  --green: #2f7a52;
+  --line: #ded8cf;
+  --muted-ink: #766d65;
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: #ffffff;
+  --card-foreground: var(--ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ink);
+  --primary: var(--orange);
+  --primary-foreground: var(--paper);
+  --secondary: var(--warm);
+  --secondary-foreground: var(--ink);
+  --muted: var(--warm);
+  --muted-foreground: var(--muted-ink);
+  --accent: var(--orange);
+  --accent-foreground: var(--paper);
+  --destructive: #c0361e;
+  --destructive-foreground: #ffffff;
+  --border: var(--ink);
+  --input: var(--line);
+  --ring: var(--orange);
+  --radius: 18px;
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
-  }
+  * { @apply border-border outline-ring/50; }
+  html { @apply font-sans; }
+  body { @apply bg-background text-foreground; }
+  ::selection { background: rgb(232 98 42 / 25%); }
+}
+
+@utility card-pop {
+  border: 1.5px solid var(--ink);
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: 6px 6px 0 0 var(--ink);
+}
+
+@utility card-flat {
+  border: 1.5px solid var(--ink);
+  border-radius: 18px;
+  background: var(--card);
+}
+
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 6px 14px;
+  background: var(--card);
+  color: var(--ink);
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+}
+
+@utility chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--orange);
+}
+
+@utility underline-scribble {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 40' preserveAspectRatio='none'><path d='M5 28 C 60 8, 160 8, 295 22 C 240 32, 100 36, 8 30' fill='none' stroke='%23E8622A' stroke-width='3' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% 0.55em;
+  padding-bottom: 0.1em;
+}
+
+@utility carve-label {
+  color: var(--muted-ink);
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }

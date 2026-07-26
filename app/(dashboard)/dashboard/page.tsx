@@ -6,16 +6,6 @@ import { DIMENSION_LABELS } from "@/lib/scoring/dimension-labels";
 import type { DimensionKey } from "@/lib/scoring/types";
 import { isNotReadyForRetailer } from "@/lib/assessment/not-ready";
 
-/**
- * Task 7.2 — Brand home: score + single blocker (US-01, US-04).
- *
- * Per 6.6b's schema fix (`@@unique([brandId, retailerId])` on `Assessment`),
- * v1 supports multi-retailer pursuit — one `Assessment` row per retailer a
- * brand has been scored against. This page lists ALL of a brand's
- * assessments (not just one "brand home" for a single retailer), each
- * linking to its own detail view (`/assessment/[id]`, 7.2/7.3/7.5), and a
- * way to add another (`/assessment/new`, 7.1).
- */
 export default async function DashboardHomePage() {
   const founder = await getCurrentFounderAndBrand();
 
@@ -26,8 +16,7 @@ export default async function DashboardHomePage() {
           Account not set up yet
         </h1>
         <p className="text-muted-foreground">
-          Your account isn&apos;t fully provisioned yet. Please contact
-          support.
+          Your account isn&apos;t fully provisioned yet. Please contact support.
         </p>
       </div>
     );
@@ -36,9 +25,7 @@ export default async function DashboardHomePage() {
   if (!founder.brand) {
     return (
       <div className="mx-auto max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 text-center">
-        <h1 className="font-display text-2xl font-semibold">
-          Welcome to Carve
-        </h1>
+        <h1 className="font-display text-2xl font-semibold">Welcome to Carve</h1>
         <p className="text-muted-foreground">
           Score your brand across six retail-readiness dimensions and see the
           single thing most likely to block your next PO.
@@ -52,7 +39,6 @@ export default async function DashboardHomePage() {
   }
 
   const brand = founder.brand;
-
   const assessments = await prisma.assessment.findMany({
     where: { brandId: brand.id },
     include: { retailer: true },
@@ -63,9 +49,7 @@ export default async function DashboardHomePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight">
-            {brand.name}
-          </h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">{brand.name}</h1>
           <p className="text-muted-foreground">{brand.category}</p>
         </div>
         <Button variant="outline" render={<Link href="/assessment/new" />}>
@@ -74,38 +58,22 @@ export default async function DashboardHomePage() {
       </div>
 
       {assessments.length === 0 ? (
-        <p className="text-muted-foreground">
-          No assessments yet — add a retailer to get your first score.
-        </p>
+        <p className="text-muted-foreground">No assessments yet — add a retailer to get your first score.</p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {assessments.map((assessment) => {
             const notReady = isNotReadyForRetailer(assessment.overallScore);
-            const dimensionLabel =
-              DIMENSION_LABELS[assessment.blockerDimension as DimensionKey];
-
+            const dimensionLabel = DIMENSION_LABELS[assessment.blockerDimension as DimensionKey];
             return (
-              <Link
-                key={assessment.id}
-                href={`/assessment/${assessment.id}`}
-                className="space-y-3 rounded-2xl border border-border bg-card p-5 transition-colors hover:bg-muted/40"
-              >
+              <Link key={assessment.id} href={`/assessment/${assessment.id}`} className="space-y-3 rounded-2xl border border-border bg-card p-5 transition-colors hover:bg-muted/40">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-display text-lg font-semibold">
-                    {assessment.retailer.name}
-                  </h2>
-                  <span className="font-mono text-2xl font-bold tabular-nums">
-                    {assessment.overallScore}
-                  </span>
+                  <h2 className="font-display text-lg font-semibold">{assessment.retailer.name}</h2>
+                  <span className="font-mono text-2xl font-bold tabular-nums">{assessment.overallScore}</span>
                 </div>
                 {notReady ? (
-                  <span className="inline-block rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-semibold tracking-wide text-destructive uppercase">
-                    Not ready yet
-                  </span>
+                  <span className="inline-block rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-semibold tracking-wide text-destructive uppercase">Not ready yet</span>
                 ) : (
-                  <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    Blocker: {dimensionLabel}
-                  </span>
+                  <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Blocker: {dimensionLabel}</span>
                 )}
               </Link>
             );

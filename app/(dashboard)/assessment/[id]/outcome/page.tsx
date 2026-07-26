@@ -51,7 +51,7 @@ export default async function OutcomePage({
     <div className="space-y-8">
       <div className="space-y-1">
         <p className="text-sm text-muted-foreground">
-          <Link href="/" className="hover:text-foreground">
+          <Link href="/dashboard" className="hover:text-foreground">
             Brand home
           </Link>{" "}
           /{" "}

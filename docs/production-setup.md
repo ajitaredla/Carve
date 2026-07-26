@@ -21,6 +21,18 @@ requests, chat, or a source file.
 7. Open **Authentication** → **URL Configuration**. Set **Site URL** to the
    final public `https://...` URL for Carve. Add these redirect URLs:
    `http://localhost:3000/**` and `https://<your-public-carve-url>/**`.
+8. In **Authentication** → **Providers** → **Email**, enable **Confirm email**.
+   Carve uses confirmation links to establish a verified account before the
+   founder starts an assessment.
+
+### Use the intended public domain
+
+If the production URL is `https://carve.apps.human-angle.com/`, configure that
+exact hostname on the Azure Container App first, then add it as the Supabase
+**Site URL** and redirect URL above. In Azure: open the Container App →
+**Custom domains** → **Add custom domain**; add the hostname and create the DNS
+record Azure displays in the `human-angle.com` DNS provider. Wait until Azure
+reports the certificate as active before switching traffic to the hostname.
 
 ## 2. Create the Anthropic key
 
@@ -51,9 +63,11 @@ Create these variables:
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase Connect dialog | No |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Connect dialog: publishable key | No |
+| `NEXT_PUBLIC_APP_URL` | Final public Carve URL, no trailing slash | No |
 | `DATABASE_URL` | Supabase transaction pooler, port 6543 | Yes |
 | `DIRECT_URL` | Supabase direct connection, port 5432 | Yes |
 | `ANTHROPIC_API_KEY` | Anthropic Console | Yes |
+| `CARVE_CHAT_MODEL` | `claude-haiku-4-5` unless deliberately changed after evaluation | No |
 | `MCP_SERVER_TOKEN` | New random token: `openssl rand -hex 32` | Yes |
 | `CARVE_ENVIRONMENT_ID` | Existing Carve Managed Agents environment | Yes |
 | `CARVE_GENERATOR_AGENT_ID` | Existing generator agent | Yes |
@@ -105,6 +119,20 @@ set email = excluded.email, name = excluded.name;
 
 4. Sign out and back in. Carve should now let that account complete intake.
 
+### Apply the assistant migration
+
+The Ask Carve workspace stores a brand-scoped conversation history. Before
+deploying the version that contains it, run this command from the Carve folder
+with production database variables loaded:
+
+```bash
+npx prisma migrate deploy
+```
+
+Confirm the migration named `20260726113000_add_assistant_chat` is applied.
+Do not launch the assistant before this step: it needs the `chat_conversations`
+and `chat_messages` tables.
+
 ## 7. Do not invent retailer data
 
 Before using a production assessment, the `retailers` table needs approved,
@@ -122,3 +150,11 @@ This repository intentionally does not contain an authoritative retailer-data
 source or seed script. Do not copy example values into production as if they
 were retailer facts. First choose an approved source and owner for each
 retailer's data; then add a reviewed, repeatable seed/import step.
+
+## 8. Remove setup data before inviting users
+
+Before launch, remove or replace the temporary retailer and any documents made
+while `CARVE_MOCK_AGENTS=1` was enabled. Those records are useful for local
+testing but are not customer-facing content. Use approved retailer facts, run
+real generation after the Anthropic MCP URL is configured, and review every
+document before it is shared externally.

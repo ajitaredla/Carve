@@ -6,15 +6,17 @@ import { LoginForm } from "./login-form";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirectTo?: string }>;
+  searchParams: Promise<{ redirectTo?: string; error?: string }>;
 }) {
-  const { redirectTo: redirectToRaw } = await searchParams;
+  const { redirectTo: redirectToRaw, error } = await searchParams;
 
   // `redirectTo` is attacker-controlled (it's a query param, and this page
   // is reachable while unauthenticated) — validate before ever handing it to
   // `redirect()` or embedding it in the form. See lib/safe-redirect.ts.
   const redirectTo =
-    redirectToRaw && isSafeRedirectPath(redirectToRaw) ? redirectToRaw : "/";
+    redirectToRaw && isSafeRedirectPath(redirectToRaw)
+      ? redirectToRaw
+      : "/dashboard";
 
   const supabase = await createClient();
   const {
@@ -28,7 +30,14 @@ export default async function LoginPage({
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <LoginForm redirectTo={redirectTo} />
+      <LoginForm
+        redirectTo={redirectTo}
+        notice={
+          error === "confirmation"
+            ? "That confirmation link is no longer valid. Please sign in or create a new account."
+            : null
+        }
+      />
     </div>
   );
 }
