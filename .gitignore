@@ -1,2 +1,27 @@
 .DS_Store
 *.docx
+node_modules/
+.env
+.env.local
+.env*.local
+generated/
+
+# next.js
+/.next/
+/out/
+
+# production build
+/build
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# vercel
+.vercel
+
+# testing
+/coverage
+
+# working notes (kept out of history; durable design docs live as published artifacts)
+.scratch/
