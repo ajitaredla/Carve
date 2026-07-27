@@ -16,7 +16,6 @@ const TRANSCRIPT = [
 export function CarveStory() {
   const [isOpen, setIsOpen] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [isPreviewPlaying, setIsPreviewPlaying] = useState(true);
   const previewRef = useRef<HTMLVideoElement>(null);
   const storyRef = useRef<HTMLVideoElement>(null);
   const watchRef = useRef<HTMLButtonElement>(null);
@@ -41,8 +40,8 @@ export function CarveStory() {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !document.hidden && isPreviewPlaying) {
-          void video.play().catch(() => setIsPreviewPlaying(false));
+        if (entry.isIntersecting && !document.hidden) {
+          void video.play().catch(() => {});
         } else {
           video.pause();
         }
@@ -52,7 +51,7 @@ export function CarveStory() {
 
     observer.observe(video);
     return () => observer.disconnect();
-  }, [isPreviewPlaying, reduceMotion]);
+  }, [reduceMotion]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -90,25 +89,12 @@ export function CarveStory() {
         story.pause();
         story.currentTime = 0;
       }
-      if (preview && !reduceMotion && isPreviewPlaying && !document.hidden) {
-        void preview.play().catch(() => setIsPreviewPlaying(false));
+      if (preview && !reduceMotion && !document.hidden) {
+        void preview.play().catch(() => {});
       }
       watchButton?.focus();
     };
-  }, [isOpen, isPreviewPlaying, reduceMotion]);
-
-  const togglePreview = () => {
-    const video = previewRef.current;
-    if (!video) return;
-    if (video.paused) {
-      void video.play().then(() => setIsPreviewPlaying(true)).catch(() => setIsPreviewPlaying(false));
-    } else {
-      video.pause();
-      setIsPreviewPlaying(false);
-    }
-  };
-
-  const previewMotionPlaying = !reduceMotion && isPreviewPlaying;
+  }, [isOpen, reduceMotion]);
 
   return (
     <>
@@ -143,17 +129,14 @@ export function CarveStory() {
               <p className="font-mono text-[10px] font-semibold tracking-[0.16em] uppercase text-paper/75">Illustrative product film · 50 seconds</p>
               <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
                 <p className="max-w-md font-display text-2xl leading-tight sm:text-3xl">See how Carve turns facts into a clearer next move.</p>
-                <div className="flex flex-wrap items-center gap-3">
                 <button
                   ref={watchRef}
                   type="button"
                   onClick={() => setIsOpen(true)}
                   className="rounded-full border-[1.5px] border-paper bg-paper px-5 py-3 text-sm font-semibold text-ink transition hover:-translate-y-0.5 hover:bg-orange hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
                 >
-                  Watch the 50-second film
+                  Watch the film
                 </button>
-                {!reduceMotion ? <button type="button" onClick={togglePreview} className="rounded-full border border-paper/80 px-3 py-2 text-xs font-semibold text-paper hover:bg-paper/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper">{previewMotionPlaying ? "Pause motion" : "Play motion"}</button> : null}
-                </div>
               </div>
             </div>
           </div>
