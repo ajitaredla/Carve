@@ -18,7 +18,13 @@ export const config = {
      * not a browser session cookie — letting this Supabase session gate run
      * against them would redirect every unauthenticated call to /login
      * before the route handler's own auth ever executes.
+     *
+     * `media/` (everything under public/media, e.g. the marketing page's
+     * video) is excluded as a whole path prefix rather than by extension —
+     * it's all public content, and an extension list here silently breaks
+     * again (redirecting the asset to /login instead of serving it) every
+     * time a new format shows up, the way .mp4/.webm/.vtt originally did.
      */
-    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api/|_next/static|_next/image|media/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
