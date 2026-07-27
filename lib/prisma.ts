@@ -12,6 +12,15 @@ import { PrismaClient } from "@prisma/client";
 //
 // The `globalThis` cache prevents Next.js dev-mode hot reload from opening a
 // new connection pool on every file save/module reload.
+//
+// `prisma` is a lazy Proxy rather than a real client: `next build` imports
+// every route module (even `force-dynamic` ones, like /api/health) just to
+// read its config exports, with no DATABASE_URL available at that point (the
+// Docker build stage never has it — see prisma.config.ts). Building the
+// client eagerly at module scope would throw during that import and fail
+// every build; deferring construction to first property access means it
+// only runs when a real request comes in, once the platform has set
+// DATABASE_URL on the running container.
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -30,8 +39,17 @@ function createPrismaClient() {
   return new PrismaClient({ adapter });
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+function getPrismaClient() {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
 }
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getPrismaClient();
+    const value = Reflect.get(client, prop);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});

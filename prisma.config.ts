@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 // Prisma 7: connection settings live here, not in schema.prisma.
 // Use the DIRECT (non-pooled) Supabase connection string here — this URL
@@ -13,9 +13,15 @@ export default defineConfig({
   },
   datasource: {
     // Local Supabase work uses a direct connection for Prisma CLI commands.
-    // The Azure classroom platform exposes only DATABASE_URL, so use it as a
-    // safe deployment fallback rather than making every container crash before
-    // `migrate deploy` can run.
-    url: process.env.DIRECT_URL ?? env("DATABASE_URL"),
+    // The Azure classroom platform exposes only DATABASE_URL at container
+    // runtime for `migrate deploy` — but the Docker build stage (where
+    // `prisma generate` also runs) has no env vars at all, since .dockerignore
+    // keeps .env out of the build context on purpose. `prisma generate` never
+    // opens a connection, so a placeholder here is safe; it's never reached
+    // once DIRECT_URL or the platform's real DATABASE_URL is set.
+    url:
+      process.env.DIRECT_URL ??
+      process.env.DATABASE_URL ??
+      "postgresql://build:build@localhost:5432/build",
   },
 });
