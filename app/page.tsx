@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CarveLogo } from "@/components/carve-logo";
+import { CarveStory } from "@/components/marketing/carve-story";
 import { NotchCard } from "@/components/notch-card";
 
 const STEPS = [
@@ -35,6 +36,7 @@ export default function LandingPage() {
           <div className="mt-8 flex flex-wrap justify-center gap-2">
             {['Pricing', 'Distribution', 'Operations', 'Certifications'].map((item) => <span key={item} className="chip">{item}</span>)}
           </div>
+          <CarveStory />
           <NotchCard className="mt-10 w-full max-w-md text-left">
             <p className="carve-label">Start here</p>
             <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
