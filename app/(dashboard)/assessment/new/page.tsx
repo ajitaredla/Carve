@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentFounderAndBrand } from "@/lib/auth/current-brand";
+import { AccountNotProvisioned } from "@/components/account-not-provisioned";
 import {
   IntakeForm,
   type IntakeFormInitialValues,
@@ -21,17 +22,7 @@ export default async function NewAssessmentPage() {
   const founder = await getCurrentFounderAndBrand();
 
   if (!founder) {
-    return (
-      <div className="space-y-2">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
-          Account not set up yet
-        </h1>
-        <p className="text-muted-foreground">
-          Your account isn&apos;t fully provisioned yet. Please contact
-          support.
-        </p>
-      </div>
-    );
+    return <AccountNotProvisioned redirectTo="/assessment/new" />;
   }
 
   const brand = founder.brand;
