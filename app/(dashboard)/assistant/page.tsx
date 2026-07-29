@@ -1,8 +1,36 @@
+import Link from "next/link";
+import { getCurrentFounderAndBrand } from "@/lib/auth/current-brand";
+import { AccountNotProvisioned } from "@/components/account-not-provisioned";
+import { Button } from "@/components/ui/button";
 import { AssistantChat } from "@/components/assistant/assistant-chat";
 
 export const metadata = { title: "Ask Carve" };
 
-export default function AssistantPage() {
+export default async function AssistantPage() {
+  const founder = await getCurrentFounderAndBrand();
+
+  if (!founder) {
+    return <AccountNotProvisioned redirectTo="/assistant" />;
+  }
+
+  if (!founder.brand) {
+    return (
+      <div className="space-y-2">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">
+          No brand yet
+        </h1>
+        <p className="text-muted-foreground">
+          Set up your brand and run your first assessment before asking Carve
+          questions about it.
+        </p>
+        <Button
+          className="bg-accent text-accent-foreground hover:bg-accent/90"
+          render={<Link href="/assessment/new">Get started</Link>}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-7">
       <div className="space-y-2">
