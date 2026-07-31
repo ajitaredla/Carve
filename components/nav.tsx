@@ -8,7 +8,6 @@ import { CarveLogo } from "@/components/carve-logo";
 const NAV_LINKS = [
   { href: "/dashboard", label: "Home" },
   { href: "/assessment/new", label: "New assessment" },
-  { href: "/assistant", label: "Ask Carve" },
   { href: "/outcomes", label: "Outcomes" },
 ] as const;
 

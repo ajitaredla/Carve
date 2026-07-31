@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentFounderAndBrand } from "@/lib/auth/current-brand";
 import { Nav } from "@/components/nav";
+import { AssistantWidget } from "@/components/assistant/assistant-widget";
 
 /**
  * Shared shell for every protected route (brand home, assessments,
@@ -23,12 +25,18 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  // Gates the floating Ask Carve widget (bottom-right, every dashboard
+  // page): every quick-start question and the assistant itself depend on
+  // brand context, so it has nothing useful to offer before intake is done.
+  const founder = await getCurrentFounderAndBrand();
+
   return (
     <div className="flex min-h-full flex-col">
       <Nav userEmail={user.email ?? ""} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         {children}
       </main>
+      {founder?.brand ? <AssistantWidget /> : null}
     </div>
   );
 }
