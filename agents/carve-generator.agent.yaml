@@ -56,16 +56,16 @@ system: |
 # server by url, so the url below and the credential's mcp_server_url MUST match
 # byte-for-byte once the app is deployed.
 #
-# ⚠️ PLACEHOLDER URL — the Carve MCP server is not yet deployed to a public
-# HTTPS endpoint (no deploy task exists yet; only local `next dev`). Managed
-# Agents reaches this url from Anthropic's infrastructure at session time, so
-# `localhost` will not work. UPDATE THIS to the real deployed origin
-# (e.g. https://<carve-app-domain>/api/mcp) before running any real session,
-# and update the matching Vault credential's mcp_server_url to the same value.
+# Live production origin — set 2026-07-31 once Carve was deployed to Azure
+# Container Apps. Updated via `client.beta.agents.update(...)`, confirmed by a
+# fresh GET (not by trusting the update response), matching the matching Vault
+# credential's mcp_server_url (also updated at the same time — old credential
+# archived, a new one created, since mcp_server_url is immutable on an
+# existing static_bearer credential).
 mcp_servers:
   - type: url
     name: carve-data
-    url: https://carve-mcp-not-yet-deployed.example.com/api/mcp
+    url: https://carve.apps.human-angle.com/api/mcp
 
 # Grant the agent the full toolset exposed by the carve-data MCP server
 # (get_retailer_requirements, run_waterfall_calculator, get_brand_context,
