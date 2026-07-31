@@ -17,8 +17,15 @@ function row(
   createdAt: string,
   output: string,
   verificationResult: string,
+  extra?: { checkerKind?: "fact" | "completeness"; attempt?: number },
 ): GenerationLogStatusRow {
-  return { createdAt: new Date(createdAt), output, verificationResult };
+  return {
+    createdAt: new Date(createdAt),
+    output,
+    verificationResult,
+    checkerKind: extra?.checkerKind ?? null,
+    attempt: extra?.attempt ?? null,
+  };
 }
 
 const T0 = "2026-07-25T00:00:00.000Z";
@@ -181,5 +188,109 @@ describe("getLatestGenerationStatus", () => {
         where: { surface: "waterfall_verdict", costWaterfallId: "cw_42" },
       }),
     );
+  });
+
+  describe("document surfaces (lib/agents/document-graph.ts's multi-checker graph)", () => {
+    it("returns pass with the final generator text when both checkers pass on attempt 1", async () => {
+      const db = mockDb([
+        row(T0, "complete, accurate KeHE application", "pass"),
+        row(T0, "PASS", "pass", { checkerKind: "fact", attempt: 1 }),
+        row(T0, "PASS", "pass", { checkerKind: "completeness", attempt: 1 }),
+      ]);
+
+      const result = await getLatestGenerationStatus(db, {
+        surface: "kehe_application",
+        assessmentId: "assess_1",
+      });
+
+      expect(result).toEqual({
+        status: "pass",
+        output: "complete, accurate KeHE application",
+      });
+    });
+
+    it("returns pass with the CORRECTED text when a checker flags attempt 1 but both pass attempt 2", async () => {
+      const db = mockDb([
+        row(T0, "draft missing a subject line", "regenerated"),
+        row(T0, "FLAGGED: missing a subject line", "flagged", {
+          checkerKind: "completeness",
+          attempt: 1,
+        }),
+        row(T0, "PASS", "pass", { checkerKind: "fact", attempt: 1 }),
+        row(T0, "corrected draft with a subject line", "pass"),
+        row(T0, "PASS", "pass", { checkerKind: "fact", attempt: 2 }),
+        row(T0, "PASS", "pass", { checkerKind: "completeness", attempt: 2 }),
+      ]);
+
+      const result = await getLatestGenerationStatus(db, {
+        surface: "kehe_application",
+        assessmentId: "assess_1",
+      });
+
+      expect(result).toEqual({
+        status: "pass",
+        output: "corrected draft with a subject line",
+      });
+    });
+
+    it("resolves the ASYMMETRIC case correctly: fact-check flags attempt 1, completeness flags attempt 2 — must surface the attempt-2 message, not the resolved attempt-1 one", async () => {
+      // This is exactly the bug lib/generation-status/get-latest-status.ts's
+      // document-surface resolution path was added to fix: naively picking
+      // "the last flagged row" from the whole batch (as the 2-node
+      // resolveOutcomeFromBatch correctly does for its own single-checker
+      // case) would risk surfacing an ALREADY-RESOLVED attempt-1 fact-check
+      // message while burying the CURRENT attempt-2 completeness message —
+      // the actual reason the founder is looking at needs_review.
+      const db = mockDb([
+        row(T0, "draft with a wrong margin figure", "regenerated"),
+        row(T0, "FLAGGED: margin figure does not match retailer requirements", "flagged", {
+          checkerKind: "fact",
+          attempt: 1,
+        }),
+        row(T0, "PASS", "pass", { checkerKind: "completeness", attempt: 1 }),
+        row(T0, "corrected margin, but now missing a subject line", "failed"),
+        row(T0, "PASS", "pass", { checkerKind: "fact", attempt: 2 }),
+        row(T0, "FLAGGED: missing a subject line", "flagged", {
+          checkerKind: "completeness",
+          attempt: 2,
+        }),
+      ]);
+
+      const result = await getLatestGenerationStatus(db, {
+        surface: "kehe_application",
+        assessmentId: "assess_1",
+      });
+
+      expect(result.status).toBe("needs_review");
+      if (result.status === "needs_review") {
+        expect(result.discrepancy).toContain("missing a subject line");
+        expect(result.discrepancy).not.toContain("margin figure");
+      }
+    });
+
+    it("joins BOTH messages when both checkers flag on the same (latest) attempt", async () => {
+      const db = mockDb([
+        row(T0, "draft with a wrong margin figure and no subject line", "failed"),
+        row(T0, "FLAGGED: margin figure does not match retailer requirements", "flagged", {
+          checkerKind: "fact",
+          attempt: 2,
+        }),
+        row(T0, "FLAGGED: missing a subject line", "flagged", {
+          checkerKind: "completeness",
+          attempt: 2,
+        }),
+      ]);
+
+      const result = await getLatestGenerationStatus(db, {
+        surface: "kehe_application",
+        assessmentId: "assess_1",
+      });
+
+      expect(result.status).toBe("needs_review");
+      if (result.status === "needs_review") {
+        expect(result.discrepancy).toContain("margin figure");
+        expect(result.discrepancy).toContain("subject line");
+      }
+    });
   });
 });

@@ -224,6 +224,14 @@ export interface GenerationLogEntry {
   model: string;
   output: string;
   verificationResult: VerificationResultLabel;
+  /** Only set by `lib/agents/document-graph.ts`'s multi-checker graph — null/
+   * unset for this file's own 2-node surfaces (blocker_statement,
+   * waterfall_verdict), which have exactly one checker and no attempt
+   * ambiguity. See `GenerationLog.checkerKind`/`attempt` in schema.prisma for
+   * why these exist: distinguishing a fact-verifier row from a
+   * completeness-checker row, and which of up to 2 attempts produced it. */
+  checkerKind?: "fact" | "completeness";
+  attempt?: number;
 }
 
 export interface GenerateWithVerificationOptions {
@@ -421,6 +429,8 @@ export async function persistGenerationLogs(
         model: entry.model,
         output: entry.output,
         verificationResult: entry.verificationResult,
+        checkerKind: entry.checkerKind,
+        attempt: entry.attempt,
         assessmentId: links.assessmentId,
         costWaterfallId: links.costWaterfallId,
       },

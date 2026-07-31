@@ -84,11 +84,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireCurrentBrand } from "@/lib/auth/current-brand";
-import {
-  generateWithVerification,
-  persistGenerationLogs,
-  wrapUntrustedField,
-} from "@/lib/agents/generate";
+import { persistGenerationLogs, wrapUntrustedField } from "@/lib/agents/generate";
+import { generateDocumentWithChecks } from "@/lib/agents/document-graph";
 import { toFriendlyGenerationError } from "@/lib/errors/friendly";
 import { DOCUMENT_TYPES, type DocumentType } from "@/lib/documents/types";
 
@@ -108,7 +105,14 @@ const PROMPT_VERSION = "v1";
 
 export type GenerateDocumentResult =
   | { status: "final"; documentType: DocumentType; documentId: string; content: string }
-  | { status: "needs_review"; documentType: DocumentType; discrepancy: string }
+  | {
+      status: "needs_review";
+      documentType: DocumentType;
+      discrepancy: string;
+      /** Split by checker (fact vs. completeness) — populated alongside the
+       * joined `discrepancy` string above for finer-grained UI later. */
+      discrepancies?: { fact?: string; completeness?: string };
+    }
   | { status: "error"; documentType: DocumentType; message: string };
 
 // ---------------------------------------------------------------------------
@@ -283,9 +287,10 @@ async function runOneDocument(
     const kickoffPrompt = buildDocumentKickoffPrompt(documentType, ctx);
     const brandInputSnapshot = buildBrandInputSnapshot(documentType, ctx);
 
-    const result = await generateWithVerification(
+    const result = await generateDocumentWithChecks(
       kickoffPrompt,
       (text) => buildDocumentVerifyPrompt(ctx, text),
+      documentType,
       {
         surface: documentType,
         promptVersion: PROMPT_VERSION,
@@ -319,7 +324,8 @@ async function runOneDocument(
       return {
         status: "needs_review" as const,
         documentType,
-        discrepancy: result.lastDiscrepancy,
+        discrepancy: result.discrepancy,
+        discrepancies: result.discrepancies,
       };
     });
   } catch (error) {

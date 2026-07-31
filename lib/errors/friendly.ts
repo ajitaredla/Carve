@@ -22,6 +22,7 @@
  */
 
 import { AgentSessionError } from "@/lib/agents/session";
+import { CompletenessCheckError } from "@/lib/agents/completeness";
 import { ScoringInputMappingError } from "@/lib/scoring/map-retailer-requirements";
 import { WaterfallInputError } from "@/lib/waterfall/calculator";
 
@@ -51,6 +52,14 @@ export function toFriendlyGenerationError(
   context: string,
 ): FriendlyError {
   if (error instanceof AgentSessionError) {
+    return { message: AGENT_SESSION_MESSAGE };
+  }
+
+  // Same founder-facing message as an AgentSessionError — both are "our AI
+  // layer hit an unexpected problem," and a founder has no actionable reason
+  // to distinguish "the generator's session failed" from "the completeness
+  // checker's API call failed."
+  if (error instanceof CompletenessCheckError) {
     return { message: AGENT_SESSION_MESSAGE };
   }
 
