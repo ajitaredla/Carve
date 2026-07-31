@@ -37,8 +37,17 @@ FROM node:22-alpine AS runtime
 # dotenv@^17 too, and npm treats the existing devDependency entry as already
 # accounted for instead of installing ours alongside it. Installing into a
 # clean directory first sidesteps that entirely.
+#
+# @prisma/adapter-pg is also installed here even though lib/prisma.ts already
+# imports it: Next's bundler inlines that pure-JS package straight into the
+# compiled server chunk, so it was never traced into .next/standalone's own
+# node_modules as a real package. That's invisible to the running app (the
+# code is already bundled in), but prisma/seed.mjs runs as plain, unbundled
+# Node outside that compiled output, so it needs the real package on disk —
+# confirmed by actually building this image and running `db seed` in it, not
+# just by re-reading this comment next time something here changes.
 WORKDIR /prisma-cli
-RUN npm install --no-save prisma@^7.0.0 dotenv@^16.4.5
+RUN npm install --no-save prisma@^7.0.0 dotenv@^16.4.5 @prisma/adapter-pg@^7.0.0
 
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -53,4 +62,4 @@ COPY --from=build /src/prisma.config.ts ./prisma.config.ts
 RUN cp -r /prisma-cli/node_modules/. ./node_modules/
 
 EXPOSE 3000
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node server.js"]
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node node_modules/prisma/build/index.js db seed && node server.js"]

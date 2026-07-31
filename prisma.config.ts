@@ -10,6 +10,9 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
+    // Plain node, not `tsx prisma/seed.ts` — the deployed container has no
+    // TypeScript runtime (see prisma/seed.mjs's own header comment).
+    seed: "node prisma/seed.mjs",
   },
   datasource: {
     // Local Supabase work uses a direct connection for Prisma CLI commands.
