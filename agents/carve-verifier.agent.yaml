@@ -77,14 +77,11 @@ system: |
 
 # ---------------------------------------------------------------------------
 # Same Carve MCP server + auth model as carve-generator. See that file's
-# mcp_servers comment for the placeholder-URL / Vault-matching caveat.
-# ⚠️ PLACEHOLDER URL — update to the real deployed origin before any real
-# session, and keep it identical to the generator's url and the Vault
-# credential's mcp_server_url.
+# mcp_servers comment for how/when this was pointed at the live origin.
 mcp_servers:
   - type: url
     name: carve-data
-    url: https://carve-mcp-not-yet-deployed.example.com/api/mcp
+    url: https://carve.apps.human-angle.com/api/mcp
 
 # permission_policy: always_allow set explicitly — the API defaults an
 # mcp_toolset to `always_ask`, which would pause the autonomous verifier session

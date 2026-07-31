@@ -35,11 +35,25 @@ jobs:
           az containerapp secret set \
             --resource-group rg-students-platform \
             --name "ca-${{ vars.STUDENT }}" \
-            --secrets anthropic-api-key="${{ secrets.ANTHROPIC_API_KEY }}"
+            --secrets \
+              anthropic-api-key="${{ secrets.ANTHROPIC_API_KEY }}" \
+              carve-environment-id="${{ secrets.CARVE_ENVIRONMENT_ID }}" \
+              carve-generator-agent-id="${{ secrets.CARVE_GENERATOR_AGENT_ID }}" \
+              carve-verifier-agent-id="${{ secrets.CARVE_VERIFIER_AGENT_ID }}" \
+              carve-vault-id="${{ secrets.CARVE_VAULT_ID }}" \
+              mcp-server-token="${{ secrets.MCP_SERVER_TOKEN }}" \
+              cron-secret="${{ secrets.CRON_SECRET }}"
           az containerapp update \
             --resource-group rg-students-platform \
             --name "ca-${{ vars.STUDENT }}" \
-            --set-env-vars ANTHROPIC_API_KEY=secretref:anthropic-api-key
+            --set-env-vars \
+              ANTHROPIC_API_KEY=secretref:anthropic-api-key \
+              CARVE_ENVIRONMENT_ID=secretref:carve-environment-id \
+              CARVE_GENERATOR_AGENT_ID=secretref:carve-generator-agent-id \
+              CARVE_VERIFIER_AGENT_ID=secretref:carve-verifier-agent-id \
+              CARVE_VAULT_ID=secretref:carve-vault-id \
+              MCP_SERVER_TOKEN=secretref:mcp-server-token \
+              CRON_SECRET=secretref:cron-secret
       - name: Deploy the immutable image
         run: |
           az containerapp update \
