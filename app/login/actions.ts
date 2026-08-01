@@ -1,122 +1,70 @@
 "use server";
 
-import { redirect } from "next/navigation";
-import { headers } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
-import { isSafeRedirectPath } from "@/lib/safe-redirect";
+import { currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 
-export type LoginState = { error: string | null };
-export type SignupState = { error: string | null; message: string | null };
-
-function getAppOrigin(requestHeaders: Headers): string {
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
-
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
-  return host ? `${protocol}://${host}` : "http://localhost:3000";
-}
-
-export async function login(
-  _prevState: LoginState,
-  formData: FormData,
-): Promise<LoginState> {
-  const email = formData.get("email");
-  const password = formData.get("password");
-  const redirectToRaw = formData.get("redirectTo");
-
-  if (
-    typeof email !== "string" ||
-    typeof password !== "string" ||
-    email.trim() === "" ||
-    password === ""
-  ) {
-    return { error: "Email and password are required." };
+/**
+ * Provisions or links this Founder's row after Clerk's client-side sign-up
+ * or sign-in flow completes (see signup-form.tsx / login-form.tsx). Trusts
+ * only the server-verified Clerk session (`currentUser()`) for identity —
+ * `name` is just profile display text, never used for authorization.
+ *
+ * Three cases, checked in order:
+ *   1. A Founder already linked to this Clerk user — nothing to do beyond
+ *      keeping email in sync.
+ *   2. A pre-Clerk Founder row (migrated from Supabase, `clerkUserId` still
+ *      null) with a matching email — this is a founder signing in for the
+ *      first time after the Clerk cutover. Link `clerkUserId` onto that
+ *      EXISTING row rather than creating a new one, so their historical
+ *      Brand/Assessment/GeneratedDocument data stays reachable. This is the
+ *      self-heal backfill path (components/account-not-provisioned.tsx).
+ *   3. Neither — a genuinely new signup.
+ */
+export async function provisionFounder(name?: string): Promise<void> {
+  const user = await currentUser();
+  if (!user) {
+    throw new Error(
+      "provisionFounder called without an authenticated Clerk session.",
+    );
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
+  const email =
+    user.primaryEmailAddress?.emailAddress ??
+    user.emailAddresses[0]?.emailAddress;
+  if (!email) {
+    throw new Error(`Clerk user ${user.id} has no email address.`);
+  }
+
+  const existingByClerkId = await prisma.founder.findUnique({
+    where: { clerkUserId: user.id },
   });
-
-  if (error) {
-    // Supabase's own error message is safe to surface (it doesn't leak
-    // whether the account exists vs. the password being wrong).
-    return { error: error.message };
+  if (existingByClerkId) {
+    await prisma.founder.update({
+      where: { clerkUserId: user.id },
+      data: { email },
+    });
+    return;
   }
 
-  const redirectTo =
-    typeof redirectToRaw === "string" && isSafeRedirectPath(redirectToRaw)
-      ? redirectToRaw
-      : "/dashboard";
-
-  redirect(redirectTo);
-}
-
-export async function signUp(
-  _prevState: SignupState,
-  formData: FormData,
-): Promise<SignupState> {
-  const name = formData.get("name");
-  const email = formData.get("email");
-  const password = formData.get("password");
-
-  if (
-    typeof name !== "string" ||
-    typeof email !== "string" ||
-    typeof password !== "string" ||
-    name.trim().length < 2 ||
-    name.trim().length > 80 ||
-    !email.includes("@") ||
-    password.length < 12
-  ) {
-    return {
-      error: "Enter your name, a valid email, and a password with at least 12 characters.",
-      message: null,
-    };
-  }
-
-  const supabase = await createClient();
-  const origin = getAppOrigin(await headers());
-  const { data, error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
-    password,
-    options: {
-      emailRedirectTo: `${origin}/auth/callback?next=/dashboard`,
-    },
+  const existingByEmail = await prisma.founder.findUnique({
+    where: { email },
   });
-
-  if (error) {
-    return { error: "We could not create that account. Please try again.", message: null };
+  if (existingByEmail) {
+    await prisma.founder.update({
+      where: { id: existingByEmail.id },
+      data: { clerkUserId: user.id },
+    });
+    return;
   }
 
-  // Supabase intentionally returns an obfuscated user for an email that is
-  // already registered. Only provision a Founder for a genuinely new user.
-  if (data.user?.identities?.length) {
-    try {
-      await prisma.founder.upsert({
-        where: { id: data.user.id },
-        create: {
-          id: data.user.id,
-          email: email.trim().toLowerCase(),
-          name: name.trim(),
-        },
-        update: { email: email.trim().toLowerCase() },
-      });
-    } catch {
-      // Do not reveal provisioning internals or account existence. The user
-      // can safely retry, and support can reconcile a rare partial signup.
-      return {
-        error: "Your account was created, but setup needs attention. Please contact support before signing in.",
-        message: null,
-      };
-    }
-  }
+  const fallbackName =
+    name?.trim() ||
+    (user.unsafeMetadata?.name as string | undefined)?.trim() ||
+    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+    email.split("@")[0]?.replace(/[._-]+/g, " ") ||
+    "Carve Founder";
 
-  return {
-    error: null,
-    message: "Check your email to confirm your Carve account, then sign in.",
-  };
+  await prisma.founder.create({
+    data: { clerkUserId: user.id, email, name: fallbackName },
+  });
 }

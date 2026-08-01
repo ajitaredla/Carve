@@ -16,7 +16,7 @@ import { ensureLiveTestUser, loginAsLive, fillIntakeForm } from "./helpers";
  * completely different database — data it creates would be invisible to
  * those agents. Only requests that go through the real deployed app land
  * in the database the agents actually query. Likewise, this file uses
- * `ensureLiveTestUser`/`loginAsLive` (Supabase Admin API only, no direct
+ * `ensureLiveTestUser`/`loginAsLive` (Clerk Backend SDK only, no direct
  * Prisma/production-DB access — the class platform's own rule: "your
  * container is the only thing that can reach the database") and relies on
  * the deployed app's own self-heal flow (PR #25,

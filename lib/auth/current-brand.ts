@@ -1,16 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@clerk/nextjs/server";
 import type { Brand, Founder } from "@prisma/client";
 
 /**
- * Identity convention (decided during task 1.0's architecture review):
- * `Founder.id` is always set equal to the corresponding Supabase Auth user's
- * UUID — never auto-generated — so looking up a founder's own data never
- * needs an email-based join, and stays correct even if the founder's email
- * changes later. Enforced at provisioning time (Phase 1 is concierge/manual
- * per PRD §12, so there is no self-serve signup flow yet to enforce this in
- * automatically — whoever provisions a Founder row must set `id` explicitly
- * to `supabaseUser.id`).
+ * Identity convention (updated when auth moved from Supabase to Clerk):
+ * `Founder.clerkUserId` holds Clerk's user id, set at provisioning time —
+ * `Founder.id` itself is just an opaque primary key, no longer tied to any
+ * auth provider's own id. Every founder-scoped lookup goes through
+ * `clerkUserId`, never email.
  *
  * Why this matters more than usual: Prisma connects via `@prisma/adapter-pg`
  * with a role that owns the tables, which bypasses Postgres RLS in practice
@@ -24,29 +21,26 @@ import type { Brand, Founder } from "@prisma/client";
 export async function getCurrentFounderAndBrand(): Promise<
   (Founder & { brand: Brand | null }) | null
 > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
 
-  if (!user) {
+  if (!userId) {
     // Shouldn't normally happen on a route proxy.ts already protects, but
     // fail closed rather than assume.
     return null;
   }
 
   return prisma.founder.findUnique({
-    where: { id: user.id },
+    where: { clerkUserId: userId },
     include: { brand: true },
   });
 }
 
 /**
  * Same as {@link getCurrentFounderAndBrand}, but throws if no Founder row
- * exists yet for this authenticated Supabase user (e.g. concierge account
- * not yet provisioned) or if that founder has no Brand yet. Use this in
- * Server Actions where proceeding without a brand is a bug, not a state to
- * render around.
+ * exists yet for this authenticated Clerk user (e.g. concierge account not
+ * yet provisioned) or if that founder has no Brand yet. Use this in Server
+ * Actions where proceeding without a brand is a bug, not a state to render
+ * around.
  */
 export async function requireCurrentBrand(): Promise<Brand> {
   const founder = await getCurrentFounderAndBrand();

@@ -7,32 +7,20 @@
  * the same Brand row. Separate users keep every spec file independent and
  * safely parallelizable.
  *
- * Bypasses the real signup flow deliberately: `app/login/actions.ts`'s
- * `signUp` requires email confirmation (a real inbox, unsuitable for CI), so
- * this uses relative (not `@/`) imports of the app's own `lib/prisma.ts` and
- * the Supabase Admin API directly to provision an already-confirmed user and
- * its matching `Founder` row — the same two pieces of state `signUp` would
- * have created, just without the email round-trip.
+ * Bypasses the real signup flow deliberately: the app's signup flow
+ * (app/login/signup-form.tsx) requires an inline email-code round-trip (a
+ * real inbox, unsuitable for CI), so this uses relative (not `@/`) imports
+ * of the app's own `lib/prisma.ts` and the Clerk Backend SDK directly to
+ * provision an already-usable user and its matching `Founder` row — the
+ * same two pieces of state the real signup flow would have created, just
+ * without the email round-trip.
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { clerkClient } from "@clerk/nextjs/server";
 import type { Page } from "@playwright/test";
 import { prisma } from "../lib/prisma";
 
 const TEST_PASSWORD = "e2e-test-password-not-real-12345";
-
-function adminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) {
-    throw new Error(
-      "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set to run the e2e suite locally.",
-    );
-  }
-  return createClient(url, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
 
 export interface TestFounder {
   id: string;
@@ -40,44 +28,38 @@ export interface TestFounder {
 }
 
 /**
- * Gets-or-creates a confirmed Supabase Auth user plus its matching `Founder`
- * row (mirroring `signUp`'s own `prisma.founder.upsert` — see that file),
- * then deletes any Brand/Assessment/etc. left over from a previous run so
- * every spec starts from a clean slate.
+ * Gets-or-creates a Clerk user plus its matching `Founder` row (mirroring
+ * provisionFounder's create path — see app/login/actions.ts), then deletes
+ * any Brand/Assessment/etc. left over from a previous run so every spec
+ * starts from a clean slate.
  */
 export async function ensureTestFounder(email: string, name: string): Promise<TestFounder> {
-  const supabase = adminClient();
+  const client = await clerkClient();
 
-  const { data: existingUsers } = await supabase.auth.admin.listUsers();
-  let user = existingUsers.users.find((u) => u.email === email);
-
-  if (!user) {
-    const { data, error } = await supabase.auth.admin.createUser({
-      email,
+  const { data: existingUsers } = await client.users.getUserList({ emailAddress: [email] });
+  const clerkUser =
+    existingUsers[0] ??
+    (await client.users.createUser({
+      emailAddress: [email],
       password: TEST_PASSWORD,
-      email_confirm: true,
-    });
-    if (error || !data.user) {
-      throw new Error(`Failed to create test user ${email}: ${error?.message}`);
-    }
-    user = data.user;
-  }
+    }));
 
-  await prisma.founder.upsert({
-    where: { id: user.id },
-    create: { id: user.id, email, name },
+  const founder = await prisma.founder.upsert({
+    where: { clerkUserId: clerkUser.id },
+    create: { clerkUserId: clerkUser.id, email, name },
     update: { email, name },
   });
 
-  await resetBrandState(user.id);
+  await resetBrandState(founder.id);
 
-  return { id: user.id, email };
+  return { id: founder.id, email };
 }
 
 /** Deletes this founder's Brand and every dependent row, in FK order (no
  * cascade configured in the schema — see scripts/eval-verifier.ts's
  * destroyFixture for the same pattern). Safe to call on a founder with no
- * Brand yet (all deleteMany calls are no-ops). */
+ * Brand yet (all deleteMany calls are no-ops). `founderId` is `Founder.id`
+ * (the Prisma primary key), not the Clerk user id. */
 export async function resetBrandState(founderId: string): Promise<void> {
   const brand = await prisma.brand.findUnique({ where: { founderId } });
   if (!brand) return;
@@ -110,30 +92,24 @@ export function testPassword(): string {
 }
 
 /**
- * `live` project counterpart to `ensureTestFounder` — creates/confirms only
- * the Supabase Auth user via the Admin API, with NO Prisma access. The
- * `live` project targets the real deployed app (playwright.config.ts's
- * `isLive` branch has no local webServer), whose actual production
- * database isn't reachable from a laptop by design (the class platform's
- * own rule: "your container is the only thing that can reach the
- * database"). The matching `Founder` row gets provisioned by the deployed
- * app itself, via its own self-heal flow (components/account-not-
- * provisioned.tsx) — see `loginAsLive` below.
+ * `live` project counterpart to `ensureTestFounder` — creates only the
+ * Clerk user via the Backend SDK, with NO Prisma access. The `live` project
+ * targets the real deployed app (playwright.config.ts's `isLive` branch has
+ * no local webServer), whose actual production database isn't reachable
+ * from a laptop by design (the class platform's own rule: "your container
+ * is the only thing that can reach the database"). The matching `Founder`
+ * row gets provisioned by the deployed app itself, via its own self-heal
+ * flow (components/account-not-provisioned.tsx) — see `loginAsLive` below.
  */
 export async function ensureLiveTestUser(email: string): Promise<void> {
-  const supabase = adminClient();
-  const { data: existingUsers } = await supabase.auth.admin.listUsers();
-  const existing = existingUsers.users.find((u) => u.email === email);
-  if (existing) return;
+  const client = await clerkClient();
+  const { data: existingUsers } = await client.users.getUserList({ emailAddress: [email] });
+  if (existingUsers[0]) return;
 
-  const { error } = await supabase.auth.admin.createUser({
-    email,
+  await client.users.createUser({
+    emailAddress: [email],
     password: TEST_PASSWORD,
-    email_confirm: true,
   });
-  if (error) {
-    throw new Error(`Failed to create live test user ${email}: ${error.message}`);
-  }
 }
 
 /** Logs in against the real deployed app and, if this is the account's

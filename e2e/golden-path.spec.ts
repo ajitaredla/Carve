@@ -3,7 +3,7 @@ import { ensureTestFounder, loginAs, fillIntakeForm } from "./helpers";
 
 /**
  * Task 9.1 — the full stack, real browser as the entry point: auth (real
- * Supabase login) -> intake (real Brand persistence) -> scoring (real
+ * Clerk login) -> intake (real Brand persistence) -> scoring (real
  * Assessment row) -> AI generation (mocked via CARVE_MOCK_AGENTS=1, so
  * outcomes are deterministic) -> waterfall -> all 6 documents -> outcome
  * logging -> refresh and confirm the persisted state re-renders correctly.

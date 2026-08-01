@@ -1,40 +1,30 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { Button } from "@/components/ui/button";
+import { provisionFounder } from "@/app/login/actions";
 
 /**
- * Recovery path for the "partial signup" case documented in
- * lib/auth/current-brand.ts: signUp() creates the Supabase Auth user first,
- * then upserts the matching Founder row — if that second step fails (e.g. it
- * ran during a deploy), the account is left authenticated with no Founder
- * row and no way to retry via signup (re-submitting an existing email is
- * intentionally a no-op, to avoid leaking account existence). This lets the
- * signed-in user self-heal their own row using the same trusted, server-
- * verified id/email signUp() already relies on — it can only ever provision
- * the caller's own account.
+ * Recovery path for two cases documented in lib/auth/current-brand.ts and
+ * app/login/actions.ts's provisionFounder:
+ *   1. The "partial signup" case — signUp's client-side flow creates the
+ *      Clerk user and verifies email first, then calls provisionFounder();
+ *      if that second step never ran (e.g. a tab closed mid-flow), the
+ *      account is left authenticated with no Founder row.
+ *   2. The Clerk cutover backfill case — a founder who signed up back when
+ *      auth was Supabase has a Founder row with no clerkUserId yet. Their
+ *      first sign-in after the cutover lands here; retrying provisions
+ *      (links, in this case) their row via the same trusted, server-
+ *      verified Clerk session provisionFounder() already relies on — it can
+ *      only ever affect the caller's own account.
  */
 export function AccountNotProvisioned({ redirectTo }: { redirectTo: string }) {
   async function retry() {
     "use server";
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await currentUser();
     if (!user) redirect("/login");
 
-    const fallbackName =
-      (user.user_metadata?.name as string | undefined)?.trim() ||
-      user.email?.split("@")[0]?.replace(/[._-]+/g, " ") ||
-      "Carve Founder";
-
-    await prisma.founder.upsert({
-      where: { id: user.id },
-      create: { id: user.id, email: user.email ?? "", name: fallbackName },
-      update: {},
-    });
+    await provisionFounder();
 
     redirect(redirectTo);
   }

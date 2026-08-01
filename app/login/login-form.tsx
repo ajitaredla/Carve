@@ -1,24 +1,58 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
-import { login, type LoginState } from "./actions";
+import { useState } from "react";
+import { useSignIn } from "@clerk/nextjs/legacy";
 import { Button } from "@/components/ui/button";
 
-const initialState: LoginState = { error: null };
+export function LoginForm({ redirectTo }: { redirectTo: string }) {
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
-export function LoginForm({
-  redirectTo,
-  notice,
-}: {
-  redirectTo: string;
-  notice: string | null;
-}) {
-  const [state, formAction, isPending] = useActionState(login, initialState);
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isLoaded) return;
+
+    setError(null);
+    setIsPending(true);
+
+    const formData = new FormData(event.currentTarget);
+    const email = formData.get("email");
+    const password = formData.get("password");
+
+    if (typeof email !== "string" || typeof password !== "string") {
+      setError("Email and password are required.");
+      setIsPending(false);
+      return;
+    }
+
+    try {
+      const result = await signIn.create({ identifier: email, password });
+
+      if (result.status !== "complete") {
+        setError("Could not sign you in. Please try again.");
+        setIsPending(false);
+        return;
+      }
+
+      await setActive({ session: result.createdSessionId });
+      // Full navigation (not client-side router.push) so proxy.ts runs
+      // again and the server-rendered (dashboard) layout sees the new
+      // session.
+      window.location.assign(redirectTo);
+    } catch (err) {
+      const message =
+        (err as { errors?: { message?: string }[] })?.errors?.[0]?.message ??
+        "Could not sign you in. Please check your email and password.";
+      setError(message);
+      setIsPending(false);
+    }
+  }
 
   return (
     <form
-      action={formAction}
+      onSubmit={handleSubmit}
       className="w-full max-w-sm space-y-5 rounded-3xl border border-border bg-card p-6 shadow-[6px_6px_0_var(--border)]"
     >
       <div className="space-y-1">
@@ -32,8 +66,6 @@ export function LoginForm({
           Continue to your retail-readiness workspace.
         </p>
       </div>
-
-      <input type="hidden" name="redirectTo" value={redirectTo} />
 
       <div className="space-y-2">
         <label htmlFor="email" className="text-sm font-medium">
@@ -63,15 +95,13 @@ export function LoginForm({
         />
       </div>
 
-      {state.error ? (
+      {error ? (
         <p role="alert" className="text-sm text-destructive">
-          {state.error}
+          {error}
         </p>
       ) : null}
 
-      {notice ? <p role="status" className="text-sm text-muted-foreground">{notice}</p> : null}
-
-      <Button type="submit" disabled={isPending} className="w-full">
+      <Button type="submit" disabled={!isLoaded || isPending} className="w-full">
         {isPending ? "Signing in…" : "Sign in"}
       </Button>
       <p className="text-center text-sm text-muted-foreground">
