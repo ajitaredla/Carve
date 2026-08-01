@@ -3,36 +3,55 @@
 Follow these steps in order. Do not paste a secret into GitHub issues, pull
 requests, chat, or a source file.
 
-## 1. Create the Supabase project
+## 1. Create the Clerk application and the Neon database
 
-1. Go to <https://supabase.com/dashboard> and sign in.
-2. Click **New project**.
-3. Choose your organization, name the project `carve-production`, choose the
-   closest region, and set a long database password. Store that password in a
-   password manager.
-4. Click **Create new project** and wait until the project says it is ready.
-5. Open the project's **Connect** dialog. Copy the project URL and the
-   publishable key. In Carve, they become `NEXT_PUBLIC_SUPABASE_URL` and
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, respectively. The publishable key is safe
-   for the browser; it is not the service-role key.
-6. In the same **Connect** dialog, copy both PostgreSQL connection strings:
-   the transaction-pooler string (port `6543`) is `DATABASE_URL`; the direct
-   string (port `5432`) is `DIRECT_URL`. Keep both private.
-7. Open **Authentication** → **URL Configuration**. Set **Site URL** to the
-   final public `https://...` URL for Carve. Add these redirect URLs:
-   `http://localhost:3000/**` and `https://<your-public-carve-url>/**`.
-8. In **Authentication** → **Providers** → **Email**, enable **Confirm email**.
-   Carve uses confirmation links to establish a verified account before the
-   founder starts an assessment.
+Carve's identity provider is Clerk; its Postgres database is Neon. Both are
+self-serve — no Azure platform permissions are needed for either.
+
+### Clerk
+
+1. Go to <https://dashboard.clerk.com> and sign in.
+2. Create an application (or use an existing one). Clerk gives you separate
+   **Development** and **Production** instances within one application —
+   use Development for local work and CI, Production for the deployed app,
+   so they never share a user pool.
+3. Enable email/password sign-in. Set the verification strategy to **email
+   code** (not link) — Carve's sign-up flow expects an inline 6-digit code,
+   not a clicked link, and has no callback route for the link-based flow.
+   No OAuth providers are configured.
+4. Open **API Keys** (left sidebar). Copy the **Publishable key** →
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`; reveal and copy the **Secret key** →
+   `CLERK_SECRET_KEY`. The publishable key is safe for the browser; the
+   secret key is server-only and must never reach a Client Component.
+5. Under **Configure**, set the allowed origins/redirect URLs to include
+   `http://localhost:3000` and the final production URL, once known.
+
+### Neon
+
+1. Go to <https://neon.tech> and sign in (GitHub login works).
+2. Create a project named `carve-production`, choosing a region close to
+   the Azure Container App's region. Create a second project (or a separate
+   branch within one project) for dev/CI, so production and dev/CI data
+   never mix — matches how dev/CI already uses its own separate database
+   today.
+3. Open **Connect** on the project dashboard. Click **Show password**.
+   Toggle **Connection pooling** — with it on, copy the string
+   (hostname has a `-pooler` suffix) as `DATABASE_URL`; with it off, copy
+   the string (no suffix) as `DIRECT_URL`. Store both in a password manager.
+4. Add `&pgbouncer=true` to `DATABASE_URL` if Neon's own string doesn't
+   already include it — this tells Prisma's query engine to behave
+   correctly against a PgBouncer-fronted pooled connection; it is a
+   Prisma-specific flag, not a Neon one, and must not be added to
+   `DIRECT_URL`.
 
 ### Use the intended public domain
 
-If the production URL is `https://carve.apps.human-angle.com/`, configure that
-exact hostname on the Azure Container App first, then add it as the Supabase
-**Site URL** and redirect URL above. In Azure: open the Container App →
-**Custom domains** → **Add custom domain**; add the hostname and create the DNS
-record Azure displays in the `human-angle.com` DNS provider. Wait until Azure
-reports the certificate as active before switching traffic to the hostname.
+If the production URL is `https://carve.apps.human-angle.com/`, configure
+that exact hostname on the Azure Container App first (Container App →
+**Custom domains** → **Add custom domain**; add the hostname and create the
+DNS record Azure displays in the `human-angle.com` DNS provider; wait until
+Azure reports the certificate as active), then add it as an allowed
+origin/redirect URL in Clerk's **Configure** settings above.
 
 ## 2. Create the Anthropic key
 
@@ -61,11 +80,11 @@ Create these variables:
 
 | Variable | Where its value comes from | Private? |
 | --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Connect dialog | No |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Connect dialog: publishable key | No |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk dashboard -> API Keys | No |
+| `CLERK_SECRET_KEY` | Clerk dashboard -> API Keys (reveal first) | Yes |
 | `NEXT_PUBLIC_APP_URL` | Final public Carve URL, no trailing slash | No |
-| `DATABASE_URL` | Supabase transaction pooler, port 6543 | Yes |
-| `DIRECT_URL` | Supabase direct connection, port 5432 | Yes |
+| `DATABASE_URL` | Neon Connect dialog, pooling toggle ON | Yes |
+| `DIRECT_URL` | Neon Connect dialog, pooling toggle OFF | Yes |
 | `ANTHROPIC_API_KEY` | Anthropic Console | Yes |
 | `CARVE_CHAT_MODEL` | `claude-haiku-4-5` unless deliberately changed after evaluation | No |
 | `MCP_SERVER_TOKEN` | New random token: `openssl rand -hex 32` | Yes |
@@ -106,18 +125,19 @@ Never set `CARVE_MOCK_AGENTS=1` in production.
 The production container automatically runs `prisma migrate deploy` before it
 starts. After the first successful deployment:
 
-1. Open the public Carve URL and create a test account.
-2. In Supabase, open **Authentication** → **Users** and copy that user's UUID.
-3. In **SQL Editor**, create a founder row using the UUID, email, and name:
-
-```sql
-insert into public.founders (id, email, name)
-values ('PASTE-THE-AUTH-USER-UUID', 'you@example.com', 'Your Name')
-on conflict (id) do update
-set email = excluded.email, name = excluded.name;
-```
-
-4. Sign out and back in. Carve should now let that account complete intake.
+1. Open the public Carve URL and create a test account (email + password,
+   then the inline verification code Clerk emails you).
+2. Sign-up provisions the matching `founders` row automatically, keyed on
+   Clerk's user id (`clerkUserId`) — no manual SQL step should normally be
+   needed. If it ever is (e.g. a founder migrated from the old Supabase
+   setup whose row predates Clerk), Carve's own self-heal flow
+   (`components/account-not-provisioned.tsx`) provisions it automatically
+   on that founder's first post-cutover sign-in — just sign in normally and
+   follow the on-screen prompt.
+3. To confirm a founder's Clerk identity is wired up correctly, open
+   Clerk's dashboard → **Users**, find the account by email, and confirm
+   its user id (`user_...`) matches the `clerk_user_id` column on that
+   founder's row in Neon (via `npx prisma studio` or the SQL Editor).
 
 ### Apply the assistant migration
 
