@@ -54,6 +54,7 @@
  */
 
 import type { GenerationSurface } from "@/lib/agents/generate";
+import { DOCUMENT_TYPES } from "@/lib/documents/types";
 
 // ---------------------------------------------------------------------------
 // Public result type
@@ -77,6 +78,11 @@ export interface GenerationLogStatusRow {
   createdAt: Date;
   output: string;
   verificationResult: string;
+  /** Only ever set on rows written by `lib/agents/document-graph.ts`'s
+   * multi-checker graph — null for every row the 2-node
+   * `generate.ts` surfaces write. See `resolveDocumentOutcomeFromBatch`. */
+  checkerKind: string | null;
+  attempt: number | null;
 }
 
 export interface GenerationLogReader {
@@ -88,7 +94,13 @@ export interface GenerationLogReader {
         costWaterfallId?: string;
       };
       orderBy: { createdAt: "desc" };
-      select: { createdAt: true; output: true; verificationResult: true };
+      select: {
+        createdAt: true;
+        output: true;
+        verificationResult: true;
+        checkerKind: true;
+        attempt: true;
+      };
     }): Promise<GenerationLogStatusRow[]>;
   };
 }
@@ -170,6 +182,69 @@ function resolveOutcomeFromBatch(
 }
 
 // ---------------------------------------------------------------------------
+// Document-surface resolution — lib/agents/document-graph.ts's multi-checker
+// graph (surfaces in DOCUMENT_TYPES only).
+// ---------------------------------------------------------------------------
+
+/** A CHECKER row (fact or completeness) reporting its own flagged verdict. */
+function isFlaggedCheckerRow(row: GenerationLogStatusRow): boolean {
+  return (
+    row.verificationResult === "flagged" &&
+    row.output.startsWith(FLAGGED_OUTPUT_PREFIX) &&
+    row.checkerKind !== null
+  );
+}
+
+const CHECKER_LABELS: Record<string, string> = {
+  fact: "Fact check",
+  completeness: "Completeness check",
+};
+
+/**
+ * Document-surface counterpart to `resolveOutcomeFromBatch`. Unlike the
+ * 2-node surfaces (one checker, so any two flagged rows in a batch are the
+ * SAME checker re-checking evolving text — genuinely interchangeable, per
+ * that function's own comment), the document graph has TWO independent
+ * checkers that can each flag on a DIFFERENT attempt (e.g. fact-check flags
+ * attempt 1, completeness flags attempt 2). Naively picking "the last
+ * flagged row" could surface an already-resolved attempt-1 message while
+ * burying the actual, current reason (attempt 2) — a real founder-facing
+ * wrong-message bug, not a cosmetic one, once there's more than one checker.
+ *
+ * Resolution: find the flagged rows at the HIGHEST `attempt` present, and
+ * join all of them (there can be 1 or 2 — either checker, or both, may have
+ * flagged on that specific attempt), labeled by which checker raised each.
+ */
+function resolveDocumentOutcomeFromBatch(
+  batch: GenerationLogStatusRow[],
+): GenerationStatus {
+  const contentPassRow = batch.find(isContentPassRow);
+  if (contentPassRow) {
+    return { status: "pass", output: contentPassRow.output };
+  }
+
+  const flaggedRows = batch.filter(isFlaggedCheckerRow);
+  if (flaggedRows.length > 0) {
+    const latestAttempt = Math.max(
+      ...flaggedRows.map((row) => row.attempt ?? 0),
+    );
+    const currentAttemptFlags = flaggedRows.filter(
+      (row) => (row.attempt ?? 0) === latestAttempt,
+    );
+    const discrepancy = currentAttemptFlags
+      .map(
+        (row) =>
+          `${CHECKER_LABELS[row.checkerKind ?? ""] ?? row.checkerKind}: ` +
+          row.output.slice(FLAGGED_OUTPUT_PREFIX.length),
+      )
+      .join("; ");
+    return { status: "needs_review", discrepancy };
+  }
+
+  return { status: "failed" };
+}
+
+// ---------------------------------------------------------------------------
 // getLatestGenerationStatus
 // ---------------------------------------------------------------------------
 
@@ -221,7 +296,13 @@ export async function getLatestGenerationStatus(
         : { costWaterfallId: params.costWaterfallId }),
     },
     orderBy: { createdAt: "desc" },
-    select: { createdAt: true, output: true, verificationResult: true },
+    select: {
+      createdAt: true,
+      output: true,
+      verificationResult: true,
+      checkerKind: true,
+      attempt: true,
+    },
   });
 
   if (rows.length === 0) {
@@ -236,5 +317,10 @@ export async function getLatestGenerationStatus(
     (row) => row.createdAt.getTime() === latestCreatedAt,
   );
 
-  return resolveOutcomeFromBatch(latestBatch);
+  const isDocumentSurface = (DOCUMENT_TYPES as readonly string[]).includes(
+    params.surface,
+  );
+  return isDocumentSurface
+    ? resolveDocumentOutcomeFromBatch(latestBatch)
+    : resolveOutcomeFromBatch(latestBatch);
 }

@@ -240,6 +240,20 @@ model GenerationLog {
   output              String
   verificationResult  String @map("verification_result") // pass | flagged | regenerated | failed
 
+  // Multi-checker document graph (lib/agents/document-graph.ts) only — null
+  // for the unchanged blocker_statement/waterfall_verdict surfaces, which
+  // still have exactly one checker (the fact-verifier) and no attempt
+  // ambiguity to resolve. checkerKind distinguishes a fact-verifier row from
+  // a completeness-checker row (both otherwise look identical: same
+  // surface, same verificationResult vocabulary). attempt (1 or 2)
+  // disambiguates which pass produced a flagged row when two DIFFERENT
+  // checkers can each independently flag on different attempts — see
+  // lib/generation-status/get-latest-status.ts's document-surface
+  // resolution path for why this matters (a real bug in the naive
+  // last-row-wins tie-break once there's more than one checker).
+  checkerKind String? @map("checker_kind") // fact | completeness
+  attempt     Int?    @map("attempt") // 1 | 2
+
   createdAt DateTime @default(now()) @map("created_at")
 
   assessmentId    String? @map("assessment_id")

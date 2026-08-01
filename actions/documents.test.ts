@@ -25,22 +25,32 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { mockGenerateWithVerification, mockPersistGenerationLogs } =
-  vi.hoisted(() => ({
-    mockGenerateWithVerification: vi.fn(),
-    mockPersistGenerationLogs: vi.fn(),
-  }));
+const { mockPersistGenerationLogs } = vi.hoisted(() => ({
+  mockPersistGenerationLogs: vi.fn(),
+}));
 vi.mock("@/lib/agents/generate", async (importOriginal) => {
   // wrapUntrustedField is passed through real (via importOriginal), not
   // mocked — see actions/assessment.test.ts's identical note for why.
   const actual =
     await importOriginal<typeof import("@/lib/agents/generate")>();
   return {
-    generateWithVerification: mockGenerateWithVerification,
     persistGenerationLogs: mockPersistGenerationLogs,
     wrapUntrustedField: actual.wrapUntrustedField,
   };
 });
+
+// documents.ts now calls generateDocumentWithChecks (the multi-checker
+// document graph, lib/agents/document-graph.ts) instead of generate.ts's
+// generateWithVerification — this is the one thing that actually changed
+// about this file. Everything below still refers to the mock as
+// `mockGenerateWithVerification` purely to keep the rest of this test file's
+// diff minimal; it now stands in for `generateDocumentWithChecks`.
+const { mockGenerateWithVerification } = vi.hoisted(() => ({
+  mockGenerateWithVerification: vi.fn(),
+}));
+vi.mock("@/lib/agents/document-graph", () => ({
+  generateDocumentWithChecks: mockGenerateWithVerification,
+}));
 
 import { generateAllDocuments, generateKeheApplication } from "./documents";
 import { DOCUMENT_TYPES } from "@/lib/documents/types";
@@ -125,7 +135,8 @@ describe("generateKeheApplication (single document)", () => {
   it("on needs_review: does not create a GeneratedDocument row, but still persists logs", async () => {
     mockGenerateWithVerification.mockResolvedValue({
       status: "needs_review",
-      lastDiscrepancy: "cites a wrong retailer program name.",
+      discrepancy: "cites a wrong retailer program name.",
+      discrepancies: { fact: "cites a wrong retailer program name." },
       logEntries: [{ output: "a" }],
     });
 
@@ -135,6 +146,7 @@ describe("generateKeheApplication (single document)", () => {
       status: "needs_review",
       documentType: "kehe_application",
       discrepancy: "cites a wrong retailer program name.",
+      discrepancies: { fact: "cites a wrong retailer program name." },
     });
     expect(mockGeneratedDocumentCreate).not.toHaveBeenCalled();
     expect(mockPersistGenerationLogs).toHaveBeenCalled();
@@ -202,7 +214,8 @@ describe("generateAllDocuments — 6.1c concurrency", () => {
         if (kickoffPrompt.includes("cold outreach")) {
           return {
             status: "needs_review",
-            lastDiscrepancy: "flagged discrepancy",
+            discrepancy: "flagged discrepancy",
+            discrepancies: { fact: "flagged discrepancy" },
             logEntries: [{ output: "x" }],
           };
         }
