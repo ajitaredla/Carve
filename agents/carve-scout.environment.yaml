@@ -1,0 +1,48 @@
+# carve-scout — Managed Agents environment for the weekly-scout system
+# (carve-weekly-scout coordinator + carve-retailer-freshness subagent).
+#
+# Apply with the `ant` CLI (control plane):
+#   ant beta:environments create < agents/carve-scout.environment.yaml
+# Store the returned environment id (see .env.example -> CARVE_SCOUT_ENVIRONMENT_ID).
+#
+# A SEPARATE environment from carve-cloud (agents/carve-cloud.environment.yaml),
+# not a shared one. carve-cloud's own header explicitly calls out why: it was
+# deliberately tightened to `limited` + `allow_mcp_servers: true` with NO
+# `allowed_hosts`, specifically because its two agents only ever call MCP
+# tools (proxied through Anthropic's orchestration layer, not reachable via
+# this environment's networking setting at all) — and it warns that a future
+# agent needing broader egress (bash, web_fetch, arbitrary HTTP) "is exactly
+# the kind of change that should force a fresh security review of this
+# environment's networking, not something that should already be sitting
+# there pre-granted." The retailer-freshness subagent needs exactly that
+# broader egress (web_search/web_fetch against real retailer websites), so
+# it gets its own environment with its own explicit, minimal allowlist,
+# rather than widening carve-cloud's grant for the two agents that don't
+# need it.
+#
+# type: cloud — same reasoning as carve-cloud; nothing here needs a
+# self-hosted sandbox.
+#
+# networking: limited, allow_mcp_servers: true (the coordinator's own
+# get_brand_context/get_verification_facts/list_active_assessments calls
+# go through the carve-data MCP server, same as carve-generator/verifier),
+# plus an explicit allowed_hosts list scoped to known retailer domains only.
+# This is the domain-scoping decision from planning: the retailer-freshness
+# subagent physically cannot fetch anything outside this allowlist, which is
+# what actually closes off prompt-injection-via-random-page risk — the
+# subagent's own system prompt telling it "only check official pages" is a
+# second layer, not the enforcement boundary. Extend this list as retailers
+# are added; a new retailer's domain has to be added here before the
+# freshness check can reach it, which is the correct default (fail closed,
+# not open).
+name: carve-scout
+config:
+  type: cloud
+  networking:
+    type: limited
+    allow_mcp_servers: true
+    allowed_hosts:
+      - wholefoodsmarket.com
+      - www.wholefoodsmarket.com
+      - sprouts.com
+      - www.sprouts.com

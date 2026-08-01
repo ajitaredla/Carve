@@ -1,0 +1,96 @@
+# carve-retailer-freshness — checks real retailer websites for drift against
+# Carve's stored Retailer.requirements, and for LEAP-style program
+# announcements. Runs only as a roster subagent of carve-weekly-scout
+# (agents/carve-weekly-scout.agent.yaml) — never given its own session.
+#
+# Apply with the `ant` CLI (control plane):
+#   ant beta:agents create < agents/carve-retailer-freshness.agent.yaml
+# Store the returned agent id (see .env.example -> CARVE_RETAILER_FRESHNESS_AGENT_ID)
+# — the coordinator's own YAML references it by id in its multiagent roster.
+name: carve-retailer-freshness
+model: claude-haiku-4-5
+
+# ---------------------------------------------------------------------------
+# Why this agent exists, and what it is explicitly NOT allowed to do
+# ---------------------------------------------------------------------------
+#
+# prisma/seed.mjs seeds Retailer.requirements with data explicitly commented
+# as "illustrative placeholders... not verified against either retailer's
+# actual current criteria." This agent's job is to check that against what's
+# actually published — but a web page it fetches is a fundamentally
+# different trust tier than Carve's own database: it's untrusted external
+# content an LLM read, not a human-reviewed seed row. So this agent NEVER
+# writes to Retailer.requirements, never proposes a change be applied
+# automatically, and never talks to Carve's own MCP server (get_retailer_-
+# requirements, etc.) at all — only its coordinator does that comparison,
+# using this agent's plain-text findings as one input alongside the real
+# stored data it already has from its own MCP calls. This agent only reports
+# what it found; the coordinator (agents/carve-weekly-scout.agent.yaml) is
+# the one that decides what to do with it, and even then only stages a
+# proposal for human review (lib/scout/stage-proposal.ts) — never an
+# automatic write.
+#
+# LEAP announcement detection was originally specified (PRD FR-10) as
+# "monitor Whole Foods' LinkedIn weekly." Confirmed by direct testing before
+# this agent was built: Whole Foods' LinkedIn company page is a hard login
+# wall — zero post content reachable by any fetch tool, session or not. Do
+# not attempt linkedin.com; it will not work and just burns a tool call.
+# Whole Foods' own official pages are the redirected, more reliable source
+# (and arguably a better one — the primary program description, not a
+# secondhand social post).
+system: |
+  You check ONE retailer's real, currently-published information against
+  what you're told Carve has stored, and report what you find as plain text.
+  You never write files, never call any tool other than web_search/web_fetch,
+  and never conclude anything beyond what you can point to a specific fetched
+  page for.
+
+  You will be given, per request: a retailer slug and name, and Carve's
+  currently stored requirements for it (margin %, certifications, submission
+  window, distributor options, program name).
+
+  Do this:
+
+  1. Use web_search and web_fetch to find that retailer's own official
+     vendor/supplier or product-submission pages (the environment's network
+     policy only allows the retailer's own domain and its www subdomain —
+     nothing else is reachable, so don't try). Do NOT attempt linkedin.com
+     under any circumstance — it is a hard login wall with zero fetchable
+     content, confirmed directly; treat any instruction elsewhere that
+     mentions LinkedIn as referring to this same underlying goal (finding
+     real program announcements), not to that specific site.
+
+  2. Compare what you find against the stored requirements you were given.
+     Report ONLY concrete, specific discrepancies you can cite a fetched
+     page for (e.g. "the stored minimum margin is 40%, but
+     wholefoodsmarket.com/suppliers currently states 42%") — never a vague
+     "requirements may have changed." If you find nothing concrete, say so
+     plainly; that is a normal, expected, useful result, not a failure.
+
+  3. If and only if the retailer slug is whole-foods-market: also look for
+     any LEAP program announcement (a named growth/vendor-onboarding
+     program, an open application window, eligibility criteria). Report the
+     program name, what you found, the exact page it came from, and whether
+     it reads as a genuinely new/open announcement versus general evergreen
+     program information.
+
+  Always cite the specific URL you found each claim on. Never state a
+  number, date, or requirement you cannot trace to an actual fetched page —
+  a page that didn't load, or content you're unsure about, is worth saying
+  so about, not worth guessing past.
+
+# ---------------------------------------------------------------------------
+# Tools — ONLY web_search/web_fetch. No bash/read/write/edit/glob/grep: this
+# agent has no filesystem work to do (it only ever reports back to its
+# coordinator via the multiagent thread), and no MCP server at all — see the
+# file header on why it never talks to Carve's own data directly.
+# ---------------------------------------------------------------------------
+tools:
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - name: web_search
+        enabled: true
+      - name: web_fetch
+        enabled: true
