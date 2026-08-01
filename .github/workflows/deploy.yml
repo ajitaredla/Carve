@@ -43,7 +43,8 @@ jobs:
               carve-verifier-agent-id="${{ secrets.CARVE_VERIFIER_AGENT_ID }}" \
               carve-vault-id="${{ secrets.CARVE_VAULT_ID }}" \
               mcp-server-token="${{ secrets.MCP_SERVER_TOKEN }}" \
-              cron-secret="${{ secrets.CRON_SECRET }}"
+              cron-secret="${{ secrets.CRON_SECRET }}" \
+              carve-scout-deployment-id="${{ secrets.CARVE_SCOUT_DEPLOYMENT_ID }}"
           az containerapp update \
             --resource-group rg-students-platform \
             --name "ca-${{ vars.STUDENT }}" \
@@ -54,7 +55,8 @@ jobs:
               CARVE_VERIFIER_AGENT_ID=secretref:carve-verifier-agent-id \
               CARVE_VAULT_ID=secretref:carve-vault-id \
               MCP_SERVER_TOKEN=secretref:mcp-server-token \
-              CRON_SECRET=secretref:cron-secret
+              CRON_SECRET=secretref:cron-secret \
+              CARVE_SCOUT_DEPLOYMENT_ID=secretref:carve-scout-deployment-id
       - name: Deploy the immutable image
         run: |
           az containerapp update \
