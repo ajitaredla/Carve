@@ -20,6 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma validate
+      - run: npx prisma generate
       - run: npm test
       - run: npm run type-check
       - run: npm run lint
@@ -43,6 +44,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx prisma generate
       - run: npx playwright install --with-deps chromium
       # CARVE_MOCK_AGENTS=1 seam — no Anthropic/Managed Agents credentials
       # needed here (see playwright.config.ts). Writes/cleans up throwaway
