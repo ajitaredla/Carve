@@ -1,0 +1,30 @@
+name: Collect Carve weekly-scout results
+
+on:
+  schedule:
+    # 14:00 UTC — an hour after the carve-weekly-scout deployment's own
+    # schedule (see agents/carve-weekly-scout.agent.yaml, 13:00 UTC Monday),
+    # so the scheduled session has time to finish before this collects it.
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger the authenticated Carve weekly-scout-collect job
+        env:
+          CARVE_APP_URL: ${{ secrets.CARVE_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CARVE_APP_URL"
+          test -n "$CRON_SECRET"
+          curl --fail --show-error --silent \
+            --retry 2 \
+            --retry-all-errors \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$CARVE_APP_URL/api/cron/weekly-scout-collect"
