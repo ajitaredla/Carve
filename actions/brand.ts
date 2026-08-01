@@ -37,6 +37,7 @@
  * there.
  */
 
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentFounderAndBrand } from "@/lib/auth/current-brand";
 import { generateBlockerStatement } from "@/actions/assessment";
@@ -126,6 +127,19 @@ export async function saveBrandIntakeAndAssess(
     };
   }
 
+  // The floating Ask Carve widget (and every other founder?.brand check in
+  // the (dashboard) route group) is gated inside the shared layout
+  // (app/(dashboard)/layout.tsx). The intake form navigates with a
+  // client-side router.push() after this action returns, which reuses that
+  // already-mounted layout instance rather than re-running its Server
+  // Component — Next.js App Router behavior, not a bug in the layout itself.
+  // Without this call, the layout keeps rendering whatever it decided on the
+  // page load BEFORE this brand existed (no widget) until a hard refresh
+  // forces it to re-run. revalidatePath('/dashboard', 'layout') invalidates
+  // every route sharing that layout, so the very next navigation picks up
+  // the brand that was just created.
+  revalidatePath("/dashboard", "layout");
+
   try {
     const result = await generateBlockerStatement(retailer.slug);
     return {
@@ -144,6 +158,17 @@ export async function saveBrandIntakeAndAssess(
       },
     });
     if (existing) {
+      // Found live (2026-07-31): this branch was completely silent — a
+      // session-level failure (e.g. AgentSessionError from the verifier's
+      // final response not matching the strict PASS/FLAGGED: <text>
+      // format) recovered to a working intake with zero trace anywhere,
+      // making it indistinguishable from "founder just hasn't clicked
+      // Generate yet" in the logs. Log it, even though the founder still
+      // gets a working assessment.
+      console.error(
+        "[saveBrandIntakeAndAssess] blocker generation failed, recovered to pending",
+        { assessmentId: existing.id, error },
+      );
       return {
         status: "success",
         assessmentId: existing.id,

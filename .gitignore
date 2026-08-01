@@ -22,6 +22,9 @@ next-env.d.ts
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
 
 # working notes (kept out of history; durable design docs live as published artifacts)
 .scratch/

@@ -3,6 +3,7 @@ name: Deploy to Azure Container Apps
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -60,3 +61,18 @@ jobs:
             --resource-group rg-students-platform \
             --name "ca-${{ vars.STUDENT }}" \
             --image "${{ vars.ACR_NAME }}.azurecr.io/${{ vars.STUDENT }}/web:${{ github.sha }}"
+      - name: Restart to pick up current secret values
+        run: |
+          # A secretref pointing at an unchanged secret NAME isn't itself a
+          # revision-defining change, so `secret set` above can land after
+          # the image-triggered revision has already started and cached the
+          # old value. An explicit restart guarantees the active revision
+          # boots with whatever the secret store holds right now.
+          REVISION=$(az containerapp show \
+            --resource-group rg-students-platform \
+            --name "ca-${{ vars.STUDENT }}" \
+            --query "properties.latestRevisionName" -o tsv)
+          az containerapp revision restart \
+            --resource-group rg-students-platform \
+            --name "ca-${{ vars.STUDENT }}" \
+            --revision "$REVISION"
