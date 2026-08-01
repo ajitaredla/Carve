@@ -5,11 +5,13 @@
  * See `.scratch/carve-v1-agentic-architecture.md` for the full design this
  * implements: Carve's AI surfaces run as Claude Managed Agents, and instead
  * of stuffing retailer/brand facts into a prompt (which a model can drift
- * from), the agent *looks up* facts through these four tools. That is the
+ * from), the agent *looks up* facts through these tools. That is the
  * structural enforcement of PRD §7's "never invents factual retailer
- * requirements" requirement.
+ * requirements" requirement. A fifth tool, list_active_assessments, was
+ * added later for carve-weekly-scout — see its own doc comment below for
+ * why it's a different disclosure shape than the original four.
  *
- * All four tools are read-only / pure-compute — see the parent task list:
+ * All tools are read-only / pure-compute — see the parent task list:
  * writing `GenerationLog`, `Assessment.blockerStatement`,
  * `CostWaterfall.verdictStatement`, and `GeneratedDocument` rows happens in
  * the Next.js Server Action *after* a Managed Agents session goes idle
@@ -814,11 +816,94 @@ function registerGetVerificationFacts(server: McpServer): void {
 }
 
 // ---------------------------------------------------------------------------
+// Tool 5: list_active_assessments
+// ---------------------------------------------------------------------------
+
+/**
+ * Added for the carve-weekly-scout agent (a coordinator with no per-founder
+ * identity of its own, kicked off by a scheduled deployment with a static
+ * message — there is no request-time opportunity to hand it a founder list
+ * the way a Server Action would). This is the one tool in this file with no
+ * caller-supplied id: it enumerates, rather than looks up, so the disclosure
+ * model is intentionally broader than the other four. Kept minimal to match
+ * that: brandId/assessmentId/retailer identifiers only, never founder name
+ * or email — a scout agent that needs to email someone does so by handing
+ * brandId back to Carve's own backend (which already has full DB access),
+ * never by asking this MCP layer for founder PII directly.
+ */
+const ListActiveAssessmentsInput = z.object({}).strict();
+
+const ListActiveAssessmentsOutput = z
+  .object({
+    assessments: z.array(
+      z.object({
+        brandId: z.string(),
+        assessmentId: z.string(),
+        retailerId: z.string(),
+        retailerSlug: z.string(),
+        retailerName: z.string(),
+      }),
+    ),
+  })
+  .strict();
+
+function registerListActiveAssessments(server: McpServer): void {
+  server.registerTool(
+    "list_active_assessments",
+    {
+      title: "List Active Assessments",
+      description:
+        "List every current assessment across all brands — one entry per " +
+        "brand+retailer pairing that has been scored. Use this to discover " +
+        "which brands to process when you have no specific brandId to start " +
+        "from (e.g. a scheduled/autonomous run, not a single founder's " +
+        "request). Returns only ids/slugs, never founder-identifying " +
+        "information — pass the returned brandId to get_brand_context for " +
+        "everything else.",
+      inputSchema: ListActiveAssessmentsInput,
+      outputSchema: ListActiveAssessmentsOutput,
+      annotations: {
+        title: "List Active Assessments",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    (): Promise<CallToolResult> =>
+      safeToolCall("list_active_assessments", async () => {
+        const assessments = await prisma.assessment.findMany({
+          select: {
+            brandId: true,
+            id: true,
+            retailerId: true,
+            retailer: { select: { slug: true, name: true } },
+          },
+        });
+
+        logToolAccess("list_active_assessments", {
+          count: String(assessments.length),
+        });
+
+        return jsonResult({
+          assessments: assessments.map((assessment) => ({
+            brandId: assessment.brandId,
+            assessmentId: assessment.id,
+            retailerId: assessment.retailerId,
+            retailerSlug: assessment.retailer.slug,
+            retailerName: assessment.retailer.name,
+          })),
+        });
+      }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Server factory
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a fresh `McpServer` with all four Carve tools registered. Called
+ * Builds a fresh `McpServer` with all five Carve tools registered. Called
  * once per incoming HTTP request by `app/api/mcp/route.ts` (stateless mode —
  * see that file for why a new server + transport per request, not a shared
  * long-lived instance, is the right shape for a Next.js Route Handler).
@@ -833,6 +918,7 @@ export function createCarveMcpServer(): McpServer {
   registerRunWaterfallCalculator(server);
   registerGetBrandContext(server);
   registerGetVerificationFacts(server);
+  registerListActiveAssessments(server);
 
   return server;
 }

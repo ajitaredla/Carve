@@ -128,6 +128,8 @@ model Retailer {
 
   assessments Assessment[]
   outcomes    Outcome[]
+  proposals   RetailerRequirementProposal[]
+  leapAlerts  LeapAlertLog[]
 
   @@map("retailers")
 }
@@ -264,4 +266,40 @@ model GenerationLog {
   generatedDocument GeneratedDocument?
 
   @@map("generation_logs")
+}
+
+// A retailer-requirement correction the carve-weekly-scout agent found by
+// checking a retailer's real published pages against Retailer.requirements —
+// staged for human review, never applied automatically. See
+// lib/mcp/tools.ts's file header on why externally-fetched content is a
+// different trust tier than this app's own database: an LLM's read of a web
+// page is not ground truth the way a human-reviewed seed row is.
+model RetailerRequirementProposal {
+  id                    String   @id @default(uuid())
+  retailerId            String   @map("retailer_id")
+  proposedRequirements  Json     @map("proposed_requirements")
+  sourceUrl             String?  @map("source_url")
+  rationale             String
+  status                String   @default("pending") // pending | approved | rejected
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  reviewedAt DateTime? @map("reviewed_at")
+
+  retailer Retailer @relation(fields: [retailerId], references: [id])
+
+  @@map("retailer_requirement_proposals")
+}
+
+// Dedup log for LEAP-style program-announcement alerts (PRD FR-10) — the
+// same announcement staying open across consecutive weekly runs should not
+// re-email every founder targeting that retailer each time it's detected.
+model LeapAlertLog {
+  id          String   @id @default(uuid())
+  retailerId  String   @map("retailer_id")
+  contentHash String   @map("content_hash")
+  sentAt      DateTime @default(now()) @map("sent_at")
+
+  retailer Retailer @relation(fields: [retailerId], references: [id])
+
+  @@map("leap_alert_logs")
 }
