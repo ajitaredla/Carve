@@ -34,9 +34,8 @@ jobs:
     needs: verify
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,8 +47,8 @@ jobs:
       - run: npx playwright install --with-deps chromium
       # CARVE_MOCK_AGENTS=1 seam — no Anthropic/Managed Agents credentials
       # needed here (see playwright.config.ts). Writes/cleans up throwaway
-      # test-founder data in the same dev Supabase DB local development
-      # uses (e2e/helpers.ts resets each spec's brand state on every run).
+      # test-founder data in the same dev Neon DB local development uses
+      # (e2e/helpers.ts resets each spec's brand state on every run).
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
