@@ -65,18 +65,19 @@ origin/redirect URL in Clerk's **Configure** settings above.
 
 ## 3. Add Container App secrets
 
-1. Open <https://portal.azure.com/>.
-2. Open **Container Apps**, then open `ca-<STUDENT>`.
-3. In the left menu, select **Secrets** and click **Add** once for each secret
-   value below. Use lowercase, hyphenated secret names such as
-   `anthropic-api-key`; paste the value only in Azure.
-4. Open **Revisions and replicas** → **Create new revision**. Select the
-   container, then **Environment variables** → **Add**.
-5. Add the matching uppercase variable name. For every private value, select
-   **Reference a secret** and choose the secret you just added. Save and
-   create the revision.
+Students on the class platform don't have Azure Portal or CLI write access —
+`.github/workflows/deploy.yml`'s "Sync app config" step does this instead,
+using its own scoped Azure permission. Your job is only to get each value
+into a **GitHub repository secret** (Settings → Secrets and variables →
+Actions → Secrets tab → New repository secret, `UPPER_SNAKE_CASE` name);
+the workflow syncs it into the Container App as a secret (lowercase-hyphenated
+name, e.g. `anthropic-api-key`) and references it from the matching
+environment variable on every push to `main`. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+is the one exception — Next.js inlines `NEXT_PUBLIC_*` values at build time, so
+it's a GitHub Actions **variable** (Variables tab, not Secrets — it's not
+sensitive) passed as a Docker build arg instead, per that same workflow file.
 
-Create these variables:
+Create these values:
 
 | Variable | Where its value comes from | Private? |
 | --- | --- | --- |
