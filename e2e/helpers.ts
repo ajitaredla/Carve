@@ -207,7 +207,14 @@ export async function fillIntakeForm(page: Page, options: IntakeFormFillOptions)
   await page.getByRole("option", { name: options.retailerName }).click();
 
   await page.getByRole("button", { name: /Score my brand|Run this assessment/ }).click();
-  await page.waitForURL(/\/assessment\/[^/]+$/, {
+  // Excludes /assessment/new itself: the page is already on that URL when
+  // this is called, and a bare `/\/assessment\/[^/]+$/` matches "new" too
+  // (no slashes in it) — Playwright's waitForURL resolves immediately
+  // against the CURRENT url if it already matches, so without this
+  // exclusion the wait was a no-op that happened to go unnoticed against
+  // the mocked project's near-instant generation, and only surfaced against
+  // real (slow) Managed Agents latency in the `live` project.
+  await page.waitForURL(/\/assessment\/(?!new$)[^/]+$/, {
     timeout: options.submitTimeoutMs ?? 30_000,
   });
 }
