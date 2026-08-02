@@ -13,12 +13,11 @@ COPY . ./
 
 # NEXT_PUBLIC_* values are inlined into the client bundle at build time —
 # a Container App env var can't reach them, so they must come in as build
-# args here instead. Supabase anon keys are meant to be public (RLS enforces
-# access control), so passing them as plain build args is fine.
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+# args here instead. Clerk's publishable key is meant to be public (the
+# secret key, never a NEXT_PUBLIC_* var, is what actually gates access), so
+# passing it as a plain build arg is fine.
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 RUN npx prisma generate && npm run build
 
 FROM node:22-alpine AS runtime

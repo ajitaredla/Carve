@@ -12,11 +12,21 @@ datasource db {
 }
 
 model Founder {
-  // Always set explicitly to the corresponding Supabase Auth user's UUID at
-  // provisioning time — never left to auto-generate. See
-  // lib/auth/current-brand.ts for why this convention is load-bearing for
-  // data isolation, not just tidiness.
+  // Historically set explicitly to the corresponding Supabase Auth user's
+  // UUID at provisioning time. Auth has since moved to Clerk (clerkUserId
+  // below is the new lookup key) — id itself stays an opaque, auto-generated
+  // primary key going forward and is no longer tied to any auth provider's
+  // own id.
   id        String   @id @default(uuid())
+  // Clerk's user id (`user_...`), set at provisioning time. Nullable because
+  // founders that predate the Clerk cutover have no value yet — they get one
+  // via the self-heal flow (components/account-not-provisioned.tsx) on their
+  // first post-cutover sign-in, rather than a proactive bulk backfill.
+  // Postgres allows multiple NULLs under a unique constraint, so this stays
+  // safe pre-backfill. See lib/auth/current-brand.ts for why this column is
+  // load-bearing for data isolation once set, not just tidiness: every
+  // founder-scoped lookup goes through it, never email.
+  clerkUserId String?  @unique @map("clerk_user_id")
   email     String   @unique
   name      String
   createdAt DateTime @default(now()) @map("created_at")

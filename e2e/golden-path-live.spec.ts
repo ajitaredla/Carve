@@ -16,7 +16,7 @@ import { ensureLiveTestUser, loginAsLive, fillIntakeForm } from "./helpers";
  * completely different database — data it creates would be invisible to
  * those agents. Only requests that go through the real deployed app land
  * in the database the agents actually query. Likewise, this file uses
- * `ensureLiveTestUser`/`loginAsLive` (Supabase Admin API only, no direct
+ * `ensureLiveTestUser`/`loginAsLive` (Clerk Backend SDK only, no direct
  * Prisma/production-DB access — the class platform's own rule: "your
  * container is the only thing that can reach the database") and relies on
  * the deployed app's own self-heal flow (PR #25,
@@ -32,7 +32,7 @@ import { ensureLiveTestUser, loginAsLive, fillIntakeForm } from "./helpers";
  * separate CI job gated to push-to-main) — see npm run test:e2e:live.
  */
 
-const EMAIL = "e2e-golden-path-live@example.test";
+const EMAIL = "e2e-golden-path-live+clerk_test@example.com";
 const NOT_STARTED_TEXT = "Your blocker statement hasn't been generated yet.";
 const NEEDS_REVIEW_TEXT = "This result needs review.";
 

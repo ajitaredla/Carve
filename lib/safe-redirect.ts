@@ -15,9 +15,9 @@
  * path the same way the browser will (against a fixed dummy origin) and
  * checking the resulting origin didn't change is what actually closes this.
  *
- * Shared between `app/login/actions.ts` (a `"use server"` module, which may
- * only export async functions, so this can't live there) and
- * `app/login/page.tsx`.
+ * Shared between `proxy.ts` (set as the `redirectTo` query param on an
+ * unauthenticated redirect, crafted directly by an attacker) and
+ * `app/login/page.tsx` / `app/login/login-form.tsx`.
  */
 export function isSafeRedirectPath(path: string): boolean {
   if (!path.startsWith("/") || path.startsWith("//")) return false;

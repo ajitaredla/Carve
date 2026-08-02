@@ -1,14 +1,14 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { getCurrentFounderAndBrand } from "@/lib/auth/current-brand";
 import { Nav } from "@/components/nav";
 import { AssistantWidget } from "@/components/assistant/assistant-widget";
 
 /**
  * Shared shell for every protected route (brand home, assessments,
- * documents, outcomes). `middleware.ts` already redirects unauthenticated
+ * documents, outcomes). `proxy.ts` already redirects unauthenticated
  * requests to `/login` before they reach here — this check is defense in
- * depth, kept cheap (a single `getUser()` call) so a misconfigured
+ * depth, kept cheap (a single `currentUser()` call) so a misconfigured
  * middleware matcher can never expose this route group.
  */
 export default async function DashboardLayout({
@@ -16,10 +16,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await currentUser();
 
   if (!user) {
     redirect("/login");
@@ -32,7 +29,13 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-full flex-col">
-      <Nav userEmail={user.email ?? ""} />
+      <Nav
+        userEmail={
+          user.primaryEmailAddress?.emailAddress ??
+          user.emailAddresses[0]?.emailAddress ??
+          ""
+        }
+      />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         {children}
       </main>

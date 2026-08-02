@@ -76,7 +76,7 @@
  * prior discussion; this is flagged again here so it's easy to find during
  * `security-auditor`'s pass.
  *
- * `proxy.ts`'s Supabase session-refresh gate explicitly excludes `/api/*`
+ * `proxy.ts`'s Clerk auth gate explicitly excludes `/api/*`
  * (see that file's `config.matcher` comment) specifically so this route can
  * run its own bearer check instead of being redirected to `/login` for
  * having no browser session cookie — confirmed still true as of this task.
