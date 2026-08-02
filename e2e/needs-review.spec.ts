@@ -17,7 +17,7 @@ import { ensureTestFounder, loginAs, fillIntakeForm } from "./helpers";
  * intake submits.
  */
 
-const EMAIL = "e2e-needs-review@example.test";
+const EMAIL = "e2e-needs-review@example.com";
 
 test.describe("needs_review", () => {
   test.beforeAll(async () => {

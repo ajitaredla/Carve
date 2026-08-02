@@ -10,7 +10,7 @@ import { ensureTestFounder, loginAs, fillIntakeForm } from "./helpers";
  * and that both assessments coexist and are independently reachable.
  */
 
-const EMAIL = "e2e-multi-retailer@example.test";
+const EMAIL = "e2e-multi-retailer@example.com";
 
 test.describe("multi-retailer", () => {
   test.beforeAll(async () => {
