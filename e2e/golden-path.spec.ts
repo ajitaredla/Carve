@@ -9,7 +9,7 @@ import { ensureTestFounder, loginAs, fillIntakeForm } from "./helpers";
  * logging -> refresh and confirm the persisted state re-renders correctly.
  */
 
-const EMAIL = "e2e-golden-path@example.com";
+const EMAIL = "e2e-golden-path+clerk_test@example.com";
 
 test.describe("golden path", () => {
   test.beforeAll(async () => {

@@ -32,7 +32,7 @@ import { ensureLiveTestUser, loginAsLive, fillIntakeForm } from "./helpers";
  * separate CI job gated to push-to-main) — see npm run test:e2e:live.
  */
 
-const EMAIL = "e2e-golden-path-live@example.com";
+const EMAIL = "e2e-golden-path-live+clerk_test@example.com";
 const NOT_STARTED_TEXT = "Your blocker statement hasn't been generated yet.";
 const NEEDS_REVIEW_TEXT = "This result needs review.";
 

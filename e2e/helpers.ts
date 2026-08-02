@@ -22,6 +22,31 @@ import { prisma } from "../lib/prisma";
 
 const TEST_PASSWORD = "e2e-test-password-not-real-12345";
 
+// Clerk's dev-instance test convention: any `+clerk_test@` email address
+// always accepts this fixed code for email_code verification (signup, and
+// the Client Trust second factor below) — no real inbox involved. Every
+// fixed test email in this file and the spec files must use that pattern
+// for these helpers to work.
+const CLERK_TEST_CODE = "424242";
+
+/** A fresh Playwright browser context has no history with Clerk, so it's
+ * always an "unrecognized" client — every sign-in through the real login
+ * form (never just Backend-API session creation) hits Clerk's Client Trust
+ * check and needs this extra emailed-code step (see login-form.tsx's
+ * `needs_client_trust` handling). No-op if the account/client is already
+ * trusted and the sign-in completed in one step. */
+async function completeClientTrustIfPrompted(page: Page): Promise<void> {
+  const codeField = page.getByLabel("Verification code");
+  const appeared = await codeField
+    .waitFor({ timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!appeared) return;
+
+  await codeField.fill(CLERK_TEST_CODE);
+  await page.getByRole("button", { name: "Verify and continue" }).click();
+}
+
 export interface TestFounder {
   id: string;
   email: string;
@@ -121,6 +146,7 @@ export async function loginAsLive(page: Page, email: string): Promise<void> {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(TEST_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await completeClientTrustIfPrompted(page);
   await page.waitForURL("**/dashboard");
 
   const finishSetupButton = page.getByRole("button", {
@@ -139,6 +165,7 @@ export async function loginAs(page: Page, email: string): Promise<void> {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(TEST_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await completeClientTrustIfPrompted(page);
   await page.waitForURL("**/dashboard");
 }
 

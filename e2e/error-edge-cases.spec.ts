@@ -18,7 +18,7 @@ import { ensureTestFounder, loginAs, fillIntakeForm } from "./helpers";
  * role="alert" message) — that's what this test actually exercises.
  */
 
-const EMAIL = "e2e-error-edge@example.com";
+const EMAIL = "e2e-error-edge+clerk_test@example.com";
 
 test.describe("session-level failures", () => {
   test.beforeAll(async () => {
