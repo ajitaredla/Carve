@@ -2,10 +2,10 @@ import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
 // Prisma 7: connection settings live here, not in schema.prisma.
-// Use the DIRECT (non-pooled) Supabase connection string here — this URL
+// Use the DIRECT (non-pooled) Neon connection string here — this URL
 // is what the Prisma CLI uses for `migrate`/`studio`. The app's runtime
 // PrismaClient (via @prisma/adapter-pg) uses the POOLED connection string
-// instead — see prisma/client.ts once the app is scaffolded.
+// instead — see lib/prisma.ts.
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -15,7 +15,7 @@ export default defineConfig({
     seed: "node prisma/seed.mjs",
   },
   datasource: {
-    // Local Supabase work uses a direct connection for Prisma CLI commands.
+    // Local Neon work uses a direct connection for Prisma CLI commands.
     // The Azure classroom platform exposes only DATABASE_URL at container
     // runtime for `migrate deploy` — but the Docker build stage (where
     // `prisma generate` also runs) has no env vars at all, since .dockerignore
