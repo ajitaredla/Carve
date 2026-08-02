@@ -45,7 +45,10 @@ jobs:
               cron-secret="${{ secrets.CRON_SECRET }}" \
               carve-scout-deployment-id="${{ secrets.CARVE_SCOUT_DEPLOYMENT_ID }}" \
               resend-api-key="${{ secrets.RESEND_API_KEY }}" \
-              resend-from-email="${{ secrets.RESEND_FROM_EMAIL }}"
+              resend-from-email="${{ secrets.RESEND_FROM_EMAIL }}" \
+              database-url="${{ secrets.DATABASE_URL }}" \
+              direct-url="${{ secrets.DIRECT_URL }}" \
+              clerk-secret-key="${{ secrets.CLERK_SECRET_KEY }}"
           az containerapp update \
             --resource-group rg-students-platform \
             --name "ca-${{ vars.STUDENT }}" \
@@ -59,7 +62,10 @@ jobs:
               CRON_SECRET=secretref:cron-secret \
               CARVE_SCOUT_DEPLOYMENT_ID=secretref:carve-scout-deployment-id \
               RESEND_API_KEY=secretref:resend-api-key \
-              RESEND_FROM_EMAIL=secretref:resend-from-email
+              RESEND_FROM_EMAIL=secretref:resend-from-email \
+              DATABASE_URL=secretref:database-url \
+              DIRECT_URL=secretref:direct-url \
+              CLERK_SECRET_KEY=secretref:clerk-secret-key
       - name: Deploy the immutable image
         run: |
           az containerapp update \
