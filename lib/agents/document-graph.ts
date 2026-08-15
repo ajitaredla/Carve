@@ -21,6 +21,7 @@ import { runGeneratorSession, runVerifierSession, sendFollowUp } from "./session
 import { runCompletenessCheck, type CheckResult } from "./completeness";
 import { runNode, allChecksPassed, combineFlaggedMessage } from "./graph";
 import { GENERATION_MODEL, type GenerationLogEntry, type VerificationResultLabel } from "./generate";
+import { traceSurface } from "@/lib/observability/langfuse";
 import type { DocumentType } from "@/lib/documents/types";
 
 export interface DocumentGraphOptions {
@@ -89,6 +90,34 @@ async function runChecks(
 }
 
 export async function generateDocumentWithChecks(
+  kickoffPrompt: string,
+  factVerifyPrompt: (text: string) => string,
+  documentType: DocumentType,
+  options: DocumentGraphOptions,
+): Promise<DocumentGraphResult> {
+  return traceSurface(
+    `generate-${options.surface}`,
+    {
+      surface: options.surface,
+      promptVersion: options.promptVersion,
+      retailerDataVersion: options.retailerDataVersion,
+    },
+    async (trace) => {
+      const result = await runDocumentGraph(
+        kickoffPrompt,
+        factVerifyPrompt,
+        documentType,
+        options,
+      );
+      trace.update({
+        output: result.status === "final" ? result.text : `needs_review: ${result.discrepancy}`,
+      });
+      return result;
+    },
+  );
+}
+
+async function runDocumentGraph(
   kickoffPrompt: string,
   factVerifyPrompt: (text: string) => string,
   documentType: DocumentType,
