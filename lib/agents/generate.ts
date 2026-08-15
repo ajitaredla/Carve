@@ -114,6 +114,7 @@ import {
   sendFollowUp,
   type ModelUsage,
 } from "./session";
+import { traceSurface } from "@/lib/observability/langfuse";
 import type { Prisma } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -276,6 +277,30 @@ export type GenerateWithVerificationResult =
 // ---------------------------------------------------------------------------
 
 export async function generateWithVerification(
+  kickoffPrompt: string,
+  verifyPrompt: (text: string) => string,
+  options: GenerateWithVerificationOptions,
+): Promise<GenerateWithVerificationResult> {
+  return traceSurface(
+    `generate-${options.surface}`,
+    {
+      surface: options.surface,
+      promptVersion: options.promptVersion,
+      retailerDataVersion: options.retailerDataVersion,
+    },
+    async (trace) => {
+      const result = await runGenerateWithVerification(
+        kickoffPrompt,
+        verifyPrompt,
+        options,
+      );
+      trace.update({ output: result.status === "final" ? result.text : `needs_review: ${result.lastDiscrepancy}` });
+      return result;
+    },
+  );
+}
+
+async function runGenerateWithVerification(
   kickoffPrompt: string,
   verifyPrompt: (text: string) => string,
   options: GenerateWithVerificationOptions,

@@ -24,6 +24,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { DocumentType } from "@/lib/documents/types";
+import { startModelObservation } from "@/lib/observability/langfuse";
+import type { ModelUsage } from "@/lib/agents/session";
 
 let client: Anthropic | undefined;
 
@@ -118,17 +120,47 @@ function mockCompletenessCheck(generatedText: string): CheckResult {
  * failure — callers should treat this the same as any other unexpected
  * generation-layer failure (see `lib/errors/friendly.ts`).
  */
+function checkSummary(result: CheckResult): string {
+  return result.verdict === "pass" ? "PASS" : `FLAGGED: ${result.discrepancy}`;
+}
+
+function toModelUsage(usage: {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+}): ModelUsage {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
+    cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+  };
+}
+
 export async function runCompletenessCheck(
   documentType: DocumentType,
   generatedText: string,
 ): Promise<CheckResult> {
-  if (isMockMode()) {
-    return mockCompletenessCheck(generatedText);
-  }
-
-  const checklist = DOCUMENT_COMPLETENESS_CHECKLISTS[documentType];
+  const observation = startModelObservation("check-completeness", {
+    model: COMPLETENESS_MODEL,
+    input: `[${documentType}] ${generatedText}`,
+    role: "completeness_checker",
+  });
 
   try {
+    if (isMockMode()) {
+      const result = mockCompletenessCheck(generatedText);
+      observation.ok(checkSummary(result), {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+      });
+      return result;
+    }
+
+    const checklist = DOCUMENT_COMPLETENESS_CHECKLISTS[documentType];
     const message = await getClient().messages.parse({
       model: COMPLETENESS_MODEL,
       max_tokens: 512,
@@ -166,16 +198,17 @@ export async function runCompletenessCheck(
       );
     }
 
-    if (parsed.complete) {
-      return { checkerKind: "completeness", verdict: "pass" };
-    }
-
-    return {
-      checkerKind: "completeness",
-      verdict: "flagged",
-      discrepancy: `Missing required elements: ${parsed.missing.join(", ")}`,
-    };
+    const result: CheckResult = parsed.complete
+      ? { checkerKind: "completeness", verdict: "pass" }
+      : {
+          checkerKind: "completeness",
+          verdict: "flagged",
+          discrepancy: `Missing required elements: ${parsed.missing.join(", ")}`,
+        };
+    observation.ok(checkSummary(result), toModelUsage(message.usage));
+    return result;
   } catch (error) {
+    observation.error(error);
     if (error instanceof CompletenessCheckError) {
       throw error;
     }

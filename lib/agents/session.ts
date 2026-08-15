@@ -60,6 +60,17 @@ import type {
   BetaManagedAgentsStreamSessionEvents,
   BetaManagedAgentsTextBlock,
 } from "@anthropic-ai/sdk/resources/beta/sessions/events";
+import { startModelObservation } from "@/lib/observability/langfuse";
+
+/** Matches `agents/carve-generator.agent.yaml`'s `model` field. Used for
+ * Langfuse observation metadata, not session creation — Managed Agents reads
+ * the model from the agent config itself (`CARVE_GENERATOR_AGENT_ID`), this
+ * is purely so cost/token tracking shows the right model name. */
+export const GENERATOR_MODEL = "claude-haiku-4-5";
+/** Matches `agents/carve-verifier.agent.yaml`'s `model` field — escalated
+ * from claude-haiku-4-5 on 2026-08-15, see that file for why. Same "for
+ * observability only" caveat as GENERATOR_MODEL above. */
+export const VERIFIER_MODEL = "claude-sonnet-4-6";
 
 // ---------------------------------------------------------------------------
 // Client
@@ -466,21 +477,35 @@ function userMessageEvent(text: string) {
 export async function runGeneratorSession(
   prompt: string,
 ): Promise<GeneratorSessionResult> {
-  if (isMockMode()) {
-    return mockRunGeneratorSession(prompt);
+  const observation = startModelObservation("generate-content", {
+    model: GENERATOR_MODEL,
+    input: prompt,
+    role: "generator",
+  });
+
+  try {
+    if (isMockMode()) {
+      const result = await mockRunGeneratorSession(prompt);
+      observation.ok(result.text, result.usage);
+      return result;
+    }
+
+    const client = getClient();
+    const session = await createSession(
+      client,
+      requireEnv("CARVE_GENERATOR_AGENT_ID"),
+    );
+
+    const { text, usage } = await driveTurn(client, session.id, () =>
+      client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
+    );
+
+    observation.ok(text, usage);
+    return { text, sessionId: session.id, usage };
+  } catch (error) {
+    observation.error(error);
+    throw error;
   }
-
-  const client = getClient();
-  const session = await createSession(
-    client,
-    requireEnv("CARVE_GENERATOR_AGENT_ID"),
-  );
-
-  const { text, usage } = await driveTurn(client, session.id, () =>
-    client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
-  );
-
-  return { text, sessionId: session.id, usage };
 }
 
 // ---------------------------------------------------------------------------
@@ -531,14 +556,29 @@ export async function sendFollowUp(
   sessionId: string,
   message: string,
 ): Promise<{ text: string; usage: ModelUsage }> {
-  if (isMockMode()) {
-    return mockSendFollowUp(sessionId, message);
-  }
+  const observation = startModelObservation("regenerate-content", {
+    model: GENERATOR_MODEL,
+    input: message,
+    role: "generator",
+  });
 
-  const client = getClient();
-  return driveTurn(client, sessionId, () =>
-    client.beta.sessions.events.send(sessionId, userMessageEvent(message)),
-  );
+  try {
+    if (isMockMode()) {
+      const result = await mockSendFollowUp(sessionId, message);
+      observation.ok(result.text, result.usage);
+      return result;
+    }
+
+    const client = getClient();
+    const result = await driveTurn(client, sessionId, () =>
+      client.beta.sessions.events.send(sessionId, userMessageEvent(message)),
+    );
+    observation.ok(result.text, result.usage);
+    return result;
+  } catch (error) {
+    observation.error(error);
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -640,28 +680,43 @@ function parseVerifierResult(text: string, sessionId: string): VerifierResult {
  * `sendFollowUp` for the verifier (see the 6.1a decision above: continuation
  * applies to the generator's correction step, not to verification itself).
  */
+function verdictSummary(result: VerifierResult): string {
+  return result === "PASS" ? "PASS" : `FLAGGED: ${result.flagged}`;
+}
+
 export async function runVerifierSession(
   prompt: string,
 ): Promise<VerifierSessionResult> {
-  if (isMockMode()) {
-    return mockRunVerifierSession(prompt);
+  const observation = startModelObservation("verify-content", {
+    model: VERIFIER_MODEL,
+    input: prompt,
+    role: "verifier",
+  });
+
+  try {
+    if (isMockMode()) {
+      const result = await mockRunVerifierSession(prompt);
+      observation.ok(verdictSummary(result.result), result.usage);
+      return result;
+    }
+
+    const client = getClient();
+    const session = await createSession(
+      client,
+      requireEnv("CARVE_VERIFIER_AGENT_ID"),
+    );
+
+    const { text, usage } = await driveTurn(client, session.id, () =>
+      client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
+    );
+
+    const result = parseVerifierResult(text, session.id);
+    observation.ok(verdictSummary(result), usage);
+    return { result, sessionId: session.id, usage };
+  } catch (error) {
+    observation.error(error);
+    throw error;
   }
-
-  const client = getClient();
-  const session = await createSession(
-    client,
-    requireEnv("CARVE_VERIFIER_AGENT_ID"),
-  );
-
-  const { text, usage } = await driveTurn(client, session.id, () =>
-    client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
-  );
-
-  return {
-    result: parseVerifierResult(text, session.id),
-    sessionId: session.id,
-    usage,
-  };
 }
 
 // ---------------------------------------------------------------------------
