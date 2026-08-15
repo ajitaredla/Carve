@@ -3,13 +3,8 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CarveLogo } from "@/components/carve-logo";
 import { CarveStory } from "@/components/marketing/carve-story";
+import { HowItWorks } from "@/components/marketing/how-it-works";
 import { NotchCard } from "@/components/notch-card";
-
-const STEPS = [
-  ["01", "Answer one practical intake", "Share the pricing, operations, certifications, and distribution facts buyers evaluate."],
-  ["02", "Find the one blocker", "Carve scores your readiness and focuses attention on the most important action."],
-  ["03", "Prepare the next move", "Model your unit economics and build buyer-ready materials from your saved facts."],
-] as const;
 
 export default function LandingPage() {
   return (
@@ -53,31 +48,21 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <HowItWorks />
+
       <section className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
-        <p className="carve-label">How Carve works</p>
-        <h2 className="mt-4 max-w-2xl font-display text-4xl font-medium tracking-tight sm:text-5xl">Practical preparation, not generic advice.</h2>
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {STEPS.map(([number, title, description]) => (
-            <article key={number} className="card-flat p-6">
-              <p className="font-mono text-sm text-muted-foreground">{number}</p>
-              <h3 className="mt-12 font-display text-2xl font-medium">{title}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{description}</p>
-            </article>
-          ))}
+        <div className="mx-auto max-w-sm space-y-5 rounded-3xl border border-border bg-card p-6 text-center shadow-[6px_6px_0_var(--border)] sm:p-8">
+          <p className="font-mono text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">Carve workspace</p>
+          <h2 className="font-display text-2xl font-semibold sm:text-3xl">Ready to find the clearest route to your next PO?</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            You review every recommendation before you act. Carve organises your
+            existing facts into a clear next step — it does not submit
+            applications or send materials without you.
+          </p>
+          <Button className="w-full bg-orange text-primary-foreground shadow-[4px_4px_0_var(--ink)] hover:-translate-y-0.5 hover:bg-orange/90" render={<Link href="/login" />}>
+            Sign in to Carve <ArrowRight aria-hidden="true" />
+          </Button>
         </div>
-      </section>
-
-      <section className="border-y border-border bg-warm">
-        <div className="mx-auto max-w-4xl px-5 py-16 text-center sm:px-8">
-          <p className="carve-label">Your decision, better prepared</p>
-          <h2 className="mx-auto mt-4 max-w-2xl font-display text-4xl font-medium tracking-tight sm:text-5xl">You review every recommendation before you act.</h2>
-          <p className="mx-auto mt-4 max-w-xl text-muted-foreground">Carve organises your existing facts into a clear next step. It does not submit applications or send materials without you.</p>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-5 py-20 text-center sm:px-8">
-        <h2 className="mx-auto max-w-2xl font-display text-4xl font-medium tracking-tight sm:text-5xl">Ready to find the clearest route to your next PO?</h2>
-        <Button className="mt-7 bg-orange text-primary-foreground shadow-[4px_4px_0_var(--ink)] hover:-translate-y-0.5 hover:bg-orange/90" render={<Link href="/login" />}>Sign in to Carve <ArrowRight aria-hidden="true" /></Button>
       </section>
       <footer className="border-t border-border py-8"><p className="text-center font-mono text-[11px] tracking-widest text-muted-foreground uppercase">Shelf space isn&apos;t given · It&apos;s carved out</p></footer>
     </main>
