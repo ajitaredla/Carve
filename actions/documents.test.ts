@@ -102,6 +102,7 @@ describe("generateKeheApplication (single document)", () => {
 
   it("on final: creates a GeneratedDocument linked to the canonical GenerationLog row", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "Subject: Introducing Test Brand to KeHE...",
       logEntries: [{ output: "a" }, { output: "b" }, { output: "c" }],
@@ -134,6 +135,7 @@ describe("generateKeheApplication (single document)", () => {
 
   it("on needs_review: does not create a GeneratedDocument row, but still persists logs", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "needs_review",
       discrepancy: "cites a wrong retailer program name.",
       discrepancies: { fact: "cites a wrong retailer program name." },
@@ -217,6 +219,7 @@ describe("generateAllDocuments — 6.1c concurrency", () => {
             discrepancy: "flagged discrepancy",
             discrepancies: { fact: "flagged discrepancy" },
             logEntries: [{ output: "x" }],
+            modelCalls: [],
           };
         }
         return {
@@ -224,6 +227,7 @@ describe("generateAllDocuments — 6.1c concurrency", () => {
           text: "generated content",
           logEntries: [{ output: "x" }],
           canonicalLogEntryIndex: 0,
+          modelCalls: [],
         };
       },
     );
@@ -264,6 +268,7 @@ describe("generateAllDocuments — 6.1c concurrency", () => {
 
   it("loads brand/assessment/retailer context only once for all six documents", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "content",
       logEntries: [{ output: "x" }],

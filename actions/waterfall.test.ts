@@ -138,6 +138,7 @@ beforeEach(() => {
 describe("generateWaterfallVerdict", () => {
   it("checks brand ownership before anything else", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "verdict",
       logEntries: [],
@@ -156,6 +157,7 @@ describe("generateWaterfallVerdict", () => {
 
   it("derives retailerMarginPct from toScoringInput, never from the caller's input", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "verdict",
       logEntries: [],
@@ -174,6 +176,7 @@ describe("generateWaterfallVerdict", () => {
 
   it("upserts CostWaterfall with the pending sentinel on create, inside the same transaction as the Assessment upsert", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "verdict",
       logEntries: [],
@@ -212,6 +215,7 @@ describe("generateWaterfallVerdict", () => {
 
   it("on final: updates verdictStatement and persists logs linked to both assessmentId and costWaterfallId", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "Founder margin of 55% clears the pass threshold comfortably.",
       logEntries: [{ output: "entry" }],
@@ -246,6 +250,7 @@ describe("generateWaterfallVerdict", () => {
 
   it("on needs_review: does not update verdictStatement, but still persists logs", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "needs_review",
       lastDiscrepancy: "cites the wrong investor verdict.",
       logEntries: [{ output: "entry-1" }],

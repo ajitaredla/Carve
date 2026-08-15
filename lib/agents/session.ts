@@ -119,6 +119,15 @@ export interface ModelUsage {
   cacheReadInputTokens: number;
 }
 
+/** One entry per real, billed model call — the shape
+ * `lib/spend/guard.ts`'s `recordSpendForCalls` consumes directly, so spend
+ * is costed per-model rather than summing token counts across
+ * differently-priced models before costing them. */
+export interface ModelCall {
+  model: string;
+  usage: ModelUsage;
+}
+
 function emptyUsage(): ModelUsage {
   return {
     inputTokens: 0,

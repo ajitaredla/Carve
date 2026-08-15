@@ -49,6 +49,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireCurrentBrand } from "@/lib/auth/current-brand";
 import { upsertAssessmentScores } from "@/lib/assessment/persist";
+import { assertUnderDailySpendCap, recordSpendForCalls } from "@/lib/spend/guard";
+import { assertUnderGenerationRateLimit } from "@/lib/rate-limit/generation";
 import {
   generateWithVerification,
   persistGenerationLogs,
@@ -148,6 +150,12 @@ export async function generateBlockerStatement(
     (tx) => upsertAssessmentScores(tx, brand, retailer),
   );
 
+  // Guard against runaway spend/abuse BEFORE the AI call — see
+  // lib/spend/guard.ts and lib/rate-limit/generation.ts for what each
+  // protects against; both are opt-in via env vars, no-ops otherwise.
+  await assertUnderDailySpendCap();
+  await assertUnderGenerationRateLimit(brand.id);
+
   // Step 4/5 — generate + verify the blocker statement.
   const kickoffPrompt = buildBlockerKickoffPrompt(
     brand.name,
@@ -176,6 +184,8 @@ export async function generateBlockerStatement(
       },
     },
   );
+
+  await recordSpendForCalls(brand.id, SURFACE, result.modelCalls);
 
   // Step 6 — persist logs, and blockerStatement only on `final`.
   await prisma.$transaction(async (tx) => {

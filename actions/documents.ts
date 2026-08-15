@@ -88,6 +88,8 @@ import { persistGenerationLogs, wrapUntrustedField } from "@/lib/agents/generate
 import { generateDocumentWithChecks } from "@/lib/agents/document-graph";
 import { toFriendlyGenerationError } from "@/lib/errors/friendly";
 import { DOCUMENT_TYPES, type DocumentType } from "@/lib/documents/types";
+import { assertUnderDailySpendCap, recordSpendForCalls } from "@/lib/spend/guard";
+import { assertUnderGenerationRateLimit } from "@/lib/rate-limit/generation";
 
 const PROMPT_VERSION = "v1";
 
@@ -284,6 +286,14 @@ async function runOneDocument(
   ctx: DocumentContext,
 ): Promise<GenerateDocumentResult> {
   try {
+    // Guard against runaway spend/abuse BEFORE the AI call — see
+    // lib/spend/guard.ts and lib/rate-limit/generation.ts. Runs once per
+    // document type; generateAllDocuments' Promise.all means all 6 check
+    // concurrently under a bulk request, a known/accepted soft-limit race
+    // (see lib/spend/guard.ts's header) rather than a hard serialization.
+    await assertUnderDailySpendCap();
+    await assertUnderGenerationRateLimit(ctx.brand.id);
+
     const kickoffPrompt = buildDocumentKickoffPrompt(documentType, ctx);
     const brandInputSnapshot = buildBrandInputSnapshot(documentType, ctx);
 
@@ -298,6 +308,8 @@ async function runOneDocument(
         brandInputSnapshot,
       },
     );
+
+    await recordSpendForCalls(ctx.brand.id, documentType, result.modelCalls);
 
     return await prisma.$transaction(async (tx) => {
       const createdLogs = await persistGenerationLogs(tx, result.logEntries, {
