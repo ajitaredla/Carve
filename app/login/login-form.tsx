@@ -5,10 +5,15 @@ import { useState } from "react";
 import { useSignIn } from "@clerk/nextjs/legacy";
 import { Button } from "@/components/ui/button";
 
+/** Prefers Clerk's `longMessage` over `message` — the short `message` field
+ * can be terse to the point of being unhelpful, while `longMessage` carries
+ * the actual explanation (same field Clerk's own custom-flow docs read
+ * from). See app/login/forgot-password/forgot-password-form.tsx for the
+ * concrete case this mattered for. */
 function clerkErrorMessage(err: unknown, fallback: string): string {
-  return (
-    (err as { errors?: { message?: string }[] })?.errors?.[0]?.message ?? fallback
-  );
+  const first = (err as { errors?: { message?: string; longMessage?: string }[] })
+    ?.errors?.[0];
+  return first?.longMessage ?? first?.message ?? fallback;
 }
 
 export function LoginForm({ redirectTo }: { redirectTo: string }) {
