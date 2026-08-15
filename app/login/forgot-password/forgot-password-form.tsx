@@ -5,10 +5,13 @@ import { useState } from "react";
 import { useSignIn } from "@clerk/nextjs/legacy";
 import { Button } from "@/components/ui/button";
 
+/** Prefers Clerk's `longMessage` over `message` — the short `message` field
+ * can be as terse as "not sent", while `longMessage` carries the actual
+ * explanation (same field Clerk's own custom-flow docs read from). */
 function clerkErrorMessage(err: unknown, fallback: string): string {
-  return (
-    (err as { errors?: { message?: string }[] })?.errors?.[0]?.message ?? fallback
-  );
+  const first = (err as { errors?: { message?: string; longMessage?: string }[] })
+    ?.errors?.[0];
+  return first?.longMessage ?? first?.message ?? fallback;
 }
 
 /**
@@ -67,8 +70,19 @@ export function ForgotPasswordForm({ redirectTo }: { redirectTo: string }) {
     setError(null);
     setIsPending(true);
     try {
-      await signIn.attemptFirstFactor({ strategy: "reset_password_email_code", code });
-      const result = await signIn.resetPassword({ password });
+      // `code` and `password` are submitted together, in ONE attemptFirstFactor
+      // call — Clerk's legacy reset_password_email_code strategy does not
+      // support verifying the code and then separately calling
+      // signIn.resetPassword({password}) as two steps; that split left the
+      // sign-in attempt in a state where Clerk rejected the second call with
+      // a "not sent" error (confirmed against a real, non-+clerk_test@
+      // account — the deterministic test-code path masked this since it
+      // never exercises real Clerk-side verification-state tracking).
+      const result = await signIn.attemptFirstFactor({
+        strategy: "reset_password_email_code",
+        code,
+        password,
+      });
 
       if (result.status !== "complete") {
         setError("That code didn't work. Please check it and try again.");
