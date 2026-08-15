@@ -37,8 +37,11 @@ model: claude-sonnet-4-6
 #      requirements JSON. So any claim citing a specific retailer fact (a
 #      minimum margin %, a certification name, a distributor requirement, a
 #      submission deadline) MUST also be checked against
-#      get_retailer_requirements(retailerSlug) — the retailerSlug is in the
-#      get_verification_facts response.
+#      get_retailer_requirements(retailerSlug, category) — the retailerSlug
+#      and brand.category are both in the get_verification_facts response.
+#      (2026-08-15: category added — some retailers require different
+#      figures per product category; see map-retailer-requirements.ts's
+#      byCategory field.)
 #
 #   2. Always pass brandId to get_verification_facts when the session's brandId
 #      is known, so a mismatched brandId/assessmentId pair (upstream bug, stale
@@ -93,9 +96,14 @@ system: |
      raw requirements. Whenever the content cites a specific retailer fact — a
      stated minimum margin %, a required certification name, a distributor
      requirement, a submission deadline, a program name — you MUST ALSO call
-     get_retailer_requirements(retailerSlug), using the retailerSlug from the
-     get_verification_facts response, and check the claim against the raw
-     requirements JSON it returns.
+     get_retailer_requirements(retailerSlug, category), using the
+     retailerSlug AND brand.category from the get_verification_facts
+     response, and check the claim against the raw requirements JSON it
+     returns. ALWAYS pass category — some retailers require different
+     figures for different product categories, and omitting it can return
+     the wrong (generic) requirements, producing a false PASS or false
+     FLAGGED against numbers that were never the ones that actually apply to
+     this brand.
 
   3. If the content cites the investor verdict or specific unit economics and
      you need to re-confirm the math, call run_waterfall_calculator with the

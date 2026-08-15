@@ -3,12 +3,14 @@ import {
   ScoringInputMappingError,
   getRetailerDataVersion,
   parseRetailerRequirements,
+  resolveCategoryRequirements,
   scoreDimensionsSafe,
   scoreMarginReadinessSafe,
   toScoringInput,
   type BrandScoringFacts,
 } from "./map-retailer-requirements";
 import { Prisma, type Retailer } from "@prisma/client";
+import type { CertificationType } from "./types";
 
 const { Decimal } = Prisma;
 
@@ -24,7 +26,7 @@ function makeRetailer(requirements: unknown): Retailer {
 
 const VALID_REQUIREMENTS = {
   minGrossMarginPct: 40,
-  requiredCertifications: ["usda_organic", "non_gmo"],
+  requiredCertifications: ["usda_organic", "non_gmo"] as CertificationType[],
   submissionWindow: { open: true, daysUntilNextWindow: null },
 };
 
@@ -159,6 +161,102 @@ describe("toScoringInput", () => {
     const retailer = makeRetailer({ minGrossMarginPct: 40 }); // missing required fields
 
     expect(() => toScoringInput(brand, retailer)).toThrow(ScoringInputMappingError);
+  });
+});
+
+describe("resolveCategoryRequirements", () => {
+  const BEVERAGES_OVERRIDE = {
+    minGrossMarginPct: 45,
+    requiredCertifications: ["non_gmo"] as CertificationType[],
+    submissionWindow: { open: true, daysUntilNextWindow: null },
+  };
+  const REQUIREMENTS_WITH_CATEGORIES = {
+    ...VALID_REQUIREMENTS,
+    byCategory: {
+      Beverages: BEVERAGES_OVERRIDE,
+    },
+  };
+
+  it("returns the category override on an exact match", () => {
+    const { resolved, matchedCategory } = resolveCategoryRequirements(
+      REQUIREMENTS_WITH_CATEGORIES,
+      "Beverages",
+    );
+    expect(resolved.minGrossMarginPct).toBe(45);
+    expect(matchedCategory).toBe("Beverages");
+  });
+
+  it("matches case-insensitively and ignores surrounding whitespace", () => {
+    const { resolved, matchedCategory } = resolveCategoryRequirements(
+      REQUIREMENTS_WITH_CATEGORIES,
+      "  beverages  ",
+    );
+    expect(resolved.minGrossMarginPct).toBe(45);
+    expect(matchedCategory).toBe("Beverages");
+  });
+
+  it("falls back to the top-level defaults when no category is passed", () => {
+    const { resolved, matchedCategory } = resolveCategoryRequirements(
+      REQUIREMENTS_WITH_CATEGORIES,
+      undefined,
+    );
+    expect(resolved.minGrossMarginPct).toBe(VALID_REQUIREMENTS.minGrossMarginPct);
+    expect(matchedCategory).toBeNull();
+  });
+
+  it("falls back to the top-level defaults when the category has no override", () => {
+    const { resolved, matchedCategory } = resolveCategoryRequirements(
+      REQUIREMENTS_WITH_CATEGORIES,
+      "Shelf-stable snacks",
+    );
+    expect(resolved.minGrossMarginPct).toBe(VALID_REQUIREMENTS.minGrossMarginPct);
+    expect(matchedCategory).toBeNull();
+  });
+
+  it("falls back to the top-level defaults when the retailer has no byCategory at all", () => {
+    const { resolved, matchedCategory } = resolveCategoryRequirements(
+      VALID_REQUIREMENTS,
+      "Beverages",
+    );
+    expect(resolved.minGrossMarginPct).toBe(VALID_REQUIREMENTS.minGrossMarginPct);
+    expect(matchedCategory).toBeNull();
+  });
+});
+
+describe("toScoringInput with byCategory", () => {
+  it("scores against the category-specific override when the brand's category matches", () => {
+    const brand = makeBrand({ category: "Beverages" });
+    const retailer = makeRetailer({
+      ...VALID_REQUIREMENTS,
+      byCategory: {
+        Beverages: {
+          minGrossMarginPct: 45,
+          requiredCertifications: ["non_gmo"],
+          submissionWindow: { open: true, daysUntilNextWindow: null },
+        },
+      },
+    });
+
+    const input = toScoringInput(brand, retailer);
+    expect(input.margin.retailerMinGrossMarginPct).toBe(45);
+    expect(input.certification.requiredCertifications).toEqual(["non_gmo"]);
+  });
+
+  it("falls back to the default requirements when the brand's category has no override", () => {
+    const brand = makeBrand({ category: "Frozen desserts" });
+    const retailer = makeRetailer({
+      ...VALID_REQUIREMENTS,
+      byCategory: {
+        Beverages: {
+          minGrossMarginPct: 45,
+          requiredCertifications: ["non_gmo"],
+          submissionWindow: { open: true, daysUntilNextWindow: null },
+        },
+      },
+    });
+
+    const input = toScoringInput(brand, retailer);
+    expect(input.margin.retailerMinGrossMarginPct).toBe(VALID_REQUIREMENTS.minGrossMarginPct);
   });
 });
 

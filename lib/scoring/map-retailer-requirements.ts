@@ -122,15 +122,15 @@ const SubmissionWindowSchema = z.object({
 });
 
 /**
- * The expected shape of `Retailer.requirements`. Only `minGrossMarginPct`,
- * `requiredCertifications`, and `submissionWindow` are consumed by
- * `toScoringInput` today (see file header for why); the rest are realistic
- * retailer-onboarding fields retained for agent-facing fact citation
- * (`get_retailer_requirements`) and future dimension refinement. Not
- * `.strict()` — unknown keys are stripped, not rejected, since this is a
- * loosely-typed, retailer-authored blob with no ingestion pipeline yet.
+ * The fields a single set of requirements carries — shared by the top-level
+ * (default/fallback) requirements AND by each per-category override below.
+ * Only `minGrossMarginPct`, `requiredCertifications`, and `submissionWindow`
+ * are consumed by `toScoringInput` today (see file header for why); the
+ * rest are realistic retailer-onboarding fields retained for agent-facing
+ * fact citation (`get_retailer_requirements`) and future dimension
+ * refinement.
  */
-export const RetailerRequirementsSchema = z.object({
+const RequirementsFieldsSchema = z.object({
   /** The retailer's minimum required gross margin, as a percentage (e.g. 40 for 40%). */
   minGrossMarginPct: z.number().min(0).max(100),
   /** May be empty (a retailer that requires no certifications) but must be present. */
@@ -138,8 +138,8 @@ export const RetailerRequirementsSchema = z.object({
   submissionWindow: SubmissionWindowSchema,
 
   // Not consumed by scoring today (see file header) — retained for agent
-  // citation and future dimension refinement. All optional: a retailer
-  // requirements blob that omits them is not malformed, just less detailed.
+  // citation and future dimension refinement. All optional: a requirements
+  // set that omits them is not malformed, just less detailed.
   /** Distributors this retailer accepts, e.g. `["KeHE", "UNFI"]`. */
   distributorOptions: z.array(z.string()).optional(),
   /** Retailer-stated units-per-store-per-week benchmark, if published. */
@@ -156,7 +156,88 @@ export const RetailerRequirementsSchema = z.object({
   notes: z.string().optional(),
 });
 
+/**
+ * The expected shape of `Retailer.requirements` (2026-08-15 — added
+ * `byCategory`, see below). Not `.strict()` — unknown keys are stripped, not
+ * rejected, since this is a loosely-typed, retailer-authored blob with no
+ * ingestion pipeline yet.
+ *
+ * ---------------------------------------------------------------------------
+ * `byCategory` — per-category requirement overrides
+ * ---------------------------------------------------------------------------
+ *
+ * Confirmed as a real, live gap during a product walkthrough: a retailer's
+ * requirements were the SAME regardless of a brand's product category (a
+ * snacks brand and a beverages brand at the same retailer were scored
+ * against identical margin/certification requirements) — `get_
+ * retailer_requirements` took only a `retailerSlug`, no category. This adds
+ * an OPTIONAL map from a normalized category label to a full override set of
+ * the same fields as the top level. The top-level fields remain required and
+ * now serve as the fallback/default for any category with no explicit entry
+ * — a retailer that hasn't been broken down by category yet still works
+ * exactly as before.
+ *
+ * Deliberately full-object overrides, not partial/merged ones: this file's
+ * own stated design principle is "a missing field must throw, never silently
+ * default" (see `ScoringInputMappingError`'s docstring below) — a partial
+ * override that merges with the top level would reintroduce exactly the
+ * silent-defaulting risk that principle exists to prevent (e.g. a category
+ * override that sets a lower margin but forgets to also override
+ * certifications would silently inherit the DEFAULT certifications, not
+ * "no certifications for this category," which may or may not be true).
+ *
+ * Category matching is normalized-exact-match only (lowercased, trimmed) —
+ * not fuzzy/semantic matching. `Brand.category` is free text (e.g. "Shelf-
+ * stable snacks"), so a `byCategory` key must be written to match what
+ * founders actually enter; this is a known, deliberate simplification, not
+ * an oversight — see `resolveCategoryRequirements`'s doc comment.
+ */
+export const RetailerRequirementsSchema = RequirementsFieldsSchema.extend({
+  byCategory: z.record(z.string(), RequirementsFieldsSchema).optional(),
+});
+
 export type RetailerRequirements = z.infer<typeof RetailerRequirementsSchema>;
+/** One category's resolved requirements — same shape as the top level,
+ * without the `byCategory` map itself (this IS an entry from that map, or
+ * the top-level fallback). What `toScoringInput` and `get_retailer_
+ * requirements` actually consume. */
+export type ResolvedRetailerRequirements = z.infer<typeof RequirementsFieldsSchema>;
+
+function normalizeCategory(category: string): string {
+  return category.trim().toLowerCase();
+}
+
+/**
+ * Resolves the requirements that actually apply to `category`: an exact
+ * (normalized) match in `byCategory` if one exists, otherwise the top-level
+ * fields as the default/fallback. `category` is optional so callers with no
+ * category context (or a retailer with no `byCategory` entries at all) still
+ * get a sensible result — the pre-existing, always-worked flat behavior.
+ *
+ * `matchedCategory` in the return value tells the caller WHICH set was
+ * actually used (`null` means "fell back to the default") — surfaced to the
+ * MCP tool layer so an agent citing these figures can say which category
+ * they apply to, rather than silently presenting a fallback as if it were
+ * category-specific.
+ */
+export function resolveCategoryRequirements(
+  requirements: RetailerRequirements,
+  category: string | null | undefined,
+): { resolved: ResolvedRetailerRequirements; matchedCategory: string | null } {
+  const { byCategory, ...defaults } = requirements;
+
+  if (category && byCategory) {
+    const normalized = normalizeCategory(category);
+    const match = Object.entries(byCategory).find(
+      ([key]) => normalizeCategory(key) === normalized,
+    );
+    if (match) {
+      return { resolved: match[1], matchedCategory: match[0] };
+    }
+  }
+
+  return { resolved: defaults, matchedCategory: null };
+}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -260,7 +341,8 @@ export function toScoringInput(
   brand: BrandScoringFacts,
   retailer: Retailer,
 ): ScoringInput {
-  const requirements = parseRetailerRequirements(retailer);
+  const parsed = parseRetailerRequirements(retailer);
+  const { resolved: requirements } = resolveCategoryRequirements(parsed, brand.category);
 
   return {
     margin: {

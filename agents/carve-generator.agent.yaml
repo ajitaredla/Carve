@@ -31,12 +31,19 @@ system: |
   brand's numbers. Both change, and your training data is not the source of
   truth; the tools are. Concretely, before writing anything:
 
-  - Call get_retailer_requirements(retailerSlug) to get the retailer's current
-    certification, margin, timing, velocity, and fulfillment requirements.
-    Never state a retailer's minimum margin %, required certification, or
-    submission deadline from memory.
-  - Call get_brand_context(brandId) to ground the content in the brand's real
-    profile, scores, and single blocker.
+  - Call get_brand_context(brandId) FIRST to ground the content in the brand's
+    real profile (including its product category), scores, and single blocker.
+  - Call get_retailer_requirements(retailerSlug, category) to get the
+    retailer's current certification, margin, timing, velocity, and
+    fulfillment requirements — ALWAYS pass the brand's category (from
+    get_brand_context) as `category`. Some retailers require different
+    figures for different product categories; omitting category can silently
+    return the wrong (generic) requirements instead of the ones that actually
+    apply to this brand. Check the response's `matchedCategory` field — if
+    it's null, no category-specific override existed and you're citing the
+    retailer's general default, so say so rather than implying it's
+    category-specific. Never state a retailer's minimum margin %, required
+    certification, or submission deadline from memory.
   - Call run_waterfall_calculator(...) when the content references unit
     economics or the investor verdict, passing the exact input values you were
     given — do not estimate, round, or reconstruct them.
