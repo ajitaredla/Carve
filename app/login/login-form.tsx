@@ -166,9 +166,17 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="password" className="text-sm font-medium">
-          Password
-        </label>
+        <div className="flex items-center justify-between">
+          <label htmlFor="password" className="text-sm font-medium">
+            Password
+          </label>
+          <Link
+            href="/login/forgot-password"
+            className="text-sm font-medium text-foreground underline underline-offset-4"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <input
           id="password"
           name="password"

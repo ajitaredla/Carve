@@ -9,7 +9,12 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  * `(dashboard)` don't appear in the URL, so this list is matched against the
  * actual pathname, not the file-system group name.
  */
-const isPublicRoute = createRouteMatcher(["/", "/login", "/signup"]);
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/login",
+  "/login/forgot-password",
+  "/signup",
+]);
 
 // Next.js 16 renamed the "middleware" file convention to "proxy" (same
 // mechanism — runs before every matched request, now on the Node.js runtime
