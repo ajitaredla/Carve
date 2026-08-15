@@ -268,12 +268,18 @@ const EVAL_CASES: EvalCase[] = [
     id: "blocker-good-fulfillment",
     description: "Blocker statement citing the CORRECT 90-day lead time.",
     expected: "PASS",
+    // 2026-08-15: this case originally also asserted "well beyond the
+    // 30-day maximum most retailers expect" — a specific claim with no
+    // ground-truth backing anywhere in the fixture. A multi-trial run
+    // (5/5) showed the verifier correctly flagging it every time; the
+    // case's own `expected: PASS` label was wrong, not the verifier. Fixed
+    // to test exactly what its description says: the 90-day lead time, and
+    // nothing else.
     buildPrompt: (f) =>
       verifyPrompt(
         f,
         "The real blocker is fulfillment: you have no co-manufacturer " +
-          "relationship in place and a 90-day production lead time, well " +
-          "beyond the 30-day maximum most retailers expect.",
+          "relationship in place and a 90-day production lead time.",
       ),
   },
   {
@@ -351,14 +357,49 @@ const EVAL_CASES: EvalCase[] = [
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
+//
+// 2026-08-15 — the LLM is non-deterministic, so a single PASS/FLAGGED per
+// case (the original design) can't distinguish "this case is reliably
+// wrong" from "this case is a coin flip." Directly observed proof this
+// matters: re-running this exact script minutes apart on an unchanged
+// verifier produced a different output SHAPE for the same case
+// (blocker-good-margin went from an unparseable ERROR to a cleanly-parsed
+// FLAGGED). Each case now runs TRIALS_PER_CASE independent times and reports
+// a per-case pass RATE, not a single verdict.
 
-interface CaseOutcome {
-  id: string;
-  description: string;
-  expected: "PASS" | "FLAGGED";
+const TRIALS_PER_CASE = 5;
+
+interface TrialOutcome {
   actual: "PASS" | "FLAGGED" | "ERROR";
   correct: boolean;
   detail?: string;
+}
+
+interface CaseResult {
+  id: string;
+  description: string;
+  expected: "PASS" | "FLAGGED";
+  trials: TrialOutcome[];
+  passRate: number; // fraction of trials that matched `expected`
+  distinctShapes: Set<"PASS" | "FLAGGED" | "ERROR">; // >1 entry = unstable across trials
+}
+
+async function runTrial(evalCase: EvalCase, prompt: string): Promise<TrialOutcome> {
+  try {
+    const { result } = await runVerifierSession(prompt);
+    const actual: "PASS" | "FLAGGED" = result === "PASS" ? "PASS" : "FLAGGED";
+    return {
+      actual,
+      correct: actual === evalCase.expected,
+      detail: typeof result === "object" ? result.flagged : undefined,
+    };
+  } catch (error) {
+    return {
+      actual: "ERROR",
+      correct: false,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function runEval(): Promise<void> {
@@ -369,74 +410,94 @@ async function runEval(): Promise<void> {
   const fixture = await createFixture();
   const waterfall = calculateWaterfall(FIXTURE_WATERFALL_INPUT);
 
-  const outcomes: CaseOutcome[] = [];
+  const results: CaseResult[] = [];
 
   try {
     for (const evalCase of EVAL_CASES) {
       const prompt = evalCase.buildPrompt(fixture, waterfall);
-      console.log(`[eval-verifier] Running case: ${evalCase.id}`);
+      console.log(
+        `[eval-verifier] Running case: ${evalCase.id} (${TRIALS_PER_CASE} trials)`,
+      );
 
-      try {
-        const { result } = await runVerifierSession(prompt);
-        const actual: "PASS" | "FLAGGED" = result === "PASS" ? "PASS" : "FLAGGED";
-        outcomes.push({
-          id: evalCase.id,
-          description: evalCase.description,
-          expected: evalCase.expected,
-          actual,
-          correct: actual === evalCase.expected,
-          detail: typeof result === "object" ? result.flagged : undefined,
-        });
-      } catch (error) {
-        outcomes.push({
-          id: evalCase.id,
-          description: evalCase.description,
-          expected: evalCase.expected,
-          actual: "ERROR",
-          correct: false,
-          detail: error instanceof Error ? error.message : String(error),
-        });
-      }
+      // Independent sessions with no shared state — safe to run concurrently
+      // (see lib/agents/session.ts's 6.1c concurrency note).
+      const trials = await Promise.all(
+        Array.from({ length: TRIALS_PER_CASE }, () => runTrial(evalCase, prompt)),
+      );
+
+      results.push({
+        id: evalCase.id,
+        description: evalCase.description,
+        expected: evalCase.expected,
+        trials,
+        passRate: trials.filter((t) => t.correct).length / trials.length,
+        distinctShapes: new Set(trials.map((t) => t.actual)),
+      });
     }
   } finally {
     console.log("[eval-verifier] Cleaning up fixture data...");
     await destroyFixture(fixture);
   }
 
-  const total = outcomes.length;
-  const correct = outcomes.filter((o) => o.correct).length;
-  const falseNegatives = outcomes.filter(
-    (o) => o.expected === "FLAGGED" && o.actual === "PASS",
-  );
-  const falsePositives = outcomes.filter(
-    (o) => o.expected === "PASS" && o.actual === "FLAGGED",
-  );
+  const allTrials = results.flatMap((r) => r.trials);
+  const totalTrials = allTrials.length;
+  const totalCorrect = allTrials.filter((t) => t.correct).length;
 
-  console.log("\n=== carve-verifier reliability eval ===\n");
-  for (const outcome of outcomes) {
-    const mark = outcome.correct ? "PASS" : "MISS";
+  // A false negative/positive is scored per TRIAL, not per case — one bad
+  // trial out of five for an otherwise-reliable case is still a real,
+  // countable occurrence, especially for false negatives (the dangerous
+  // direction: see the file header on why a missed FLAGGED is worse than an
+  // over-eager one).
+  const falseNegativeTrials = results
+    .filter((r) => r.expected === "FLAGGED")
+    .flatMap((r) => r.trials.filter((t) => t.actual === "PASS"));
+  const falsePositiveTrials = results
+    .filter((r) => r.expected === "PASS")
+    .flatMap((r) => r.trials.filter((t) => t.actual === "FLAGGED"));
+
+  console.log("\n=== carve-verifier reliability eval (multi-trial) ===\n");
+  for (const result of results) {
+    const pct = (result.passRate * 100).toFixed(0);
+    const unstable = result.distinctShapes.size > 1 ? "  ⚠️  UNSTABLE (verdict shape varied across trials)" : "";
     console.log(
-      `[${mark}] ${outcome.id} — expected ${outcome.expected}, got ${outcome.actual}` +
-        (outcome.detail ? ` (${outcome.detail})` : ""),
+      `[${pct}% (${result.trials.filter((t) => t.correct).length}/${result.trials.length})] ` +
+        `${result.id} — expected ${result.expected}${unstable}`,
     );
-    console.log(`       ${outcome.description}`);
+    console.log(`       ${result.description}`);
+    // Show one example detail from a non-matching trial, if any, so a
+    // reader can see WHY without re-running the eval themselves.
+    const example = result.trials.find((t) => !t.correct && t.detail);
+    if (example) {
+      console.log(`       e.g. got ${example.actual}: ${example.detail}`);
+    }
   }
 
+  const worstCase = results.reduce((worst, r) => (r.passRate < worst.passRate ? r : worst));
+  const unstableCases = results.filter((r) => r.distinctShapes.size > 1);
+
   console.log(
-    `\nAccuracy: ${correct}/${total} (${((correct / total) * 100).toFixed(1)}%)`,
+    `\nAggregate accuracy across ${totalTrials} trials (${EVAL_CASES.length} cases x ${TRIALS_PER_CASE}): ` +
+      `${totalCorrect}/${totalTrials} (${((totalCorrect / totalTrials) * 100).toFixed(1)}%)`,
   );
   console.log(
-    `False negatives (dangerous — known-bad marked PASS): ${falseNegatives.length}`,
+    `False negatives (dangerous — known-bad marked PASS): ${falseNegativeTrials.length}/${totalTrials} trials`,
   );
   console.log(
-    `False positives (known-good incorrectly flagged): ${falsePositives.length}`,
+    `False positives (known-good incorrectly flagged): ${falsePositiveTrials.length}/${totalTrials} trials`,
+  );
+  console.log(
+    `Least reliable case: ${worstCase.id} (${(worstCase.passRate * 100).toFixed(0)}% pass rate)`,
+  );
+  console.log(
+    `Cases whose verdict SHAPE varied across identical trials: ${unstableCases.length}/${results.length}` +
+      (unstableCases.length > 0 ? ` (${unstableCases.map((r) => r.id).join(", ")})` : ""),
   );
 
-  if (falseNegatives.length > 0) {
+  if (falseNegativeTrials.length > 0) {
     console.log(
-      "\n⚠️  At least one known-bad case was NOT caught. Per 5.7's product " +
-        "review: escalate ONLY agents/carve-verifier.agent.yaml's model, not " +
-        "the generator's, and re-run this script before considering 6.4 done.",
+      "\n⚠️  At least one trial let a known-bad case through as PASS. Per 5.7's " +
+        "product review: escalate ONLY agents/carve-verifier.agent.yaml's model, " +
+        "not the generator's, and re-run this script before considering 6.4 done.",
     );
   }
 }

@@ -546,40 +546,91 @@ export async function sendFollowUp(
 // ---------------------------------------------------------------------------
 
 const FLAGGED_PREFIX = "FLAGGED:";
+const PASS_LITERAL = "PASS";
+
+/**
+ * A 2026-08-15 live eval (`scripts/eval-verifier.ts`) against the deployed
+ * verifier found real formatting slips around an otherwise-correct verdict:
+ * markdown decoration ("**FLAGGED: Margin calculation discrepancy**"), a
+ * clean verdict followed by unrequested trailing prose, AND — found only
+ * after escalating the model per that same eval's false-negative finding —
+ * the model reasoning through its checks FIRST and putting the bare verdict
+ * on the LAST line instead of the first, despite the system prompt asking
+ * for the verdict alone. None of these change the actual verdict, only
+ * where/how it's decorated. Stripped per-line so decoration on one line
+ * can't eat content that's part of a legitimate multi-line explanation.
+ */
+function stripMarkdownDecoration(line: string): string {
+  return line.replace(/^[\s*_#>-]+|[\s*_]+$/g, "");
+}
+
+interface VerdictLine {
+  index: number;
+  normalized: string;
+}
+
+/**
+ * Scans from the LAST line backward (not forward) so a compliant single-line
+ * response (verdict = the only line = both first and last) still matches
+ * immediately, while a response that explains itself before concluding with
+ * a bare verdict ("<reasoning...>\n\nPASS") is found at its actual
+ * conclusion rather than missed because line 1 wasn't the verdict.
+ */
+function findVerdictLine(lines: string[]): VerdictLine | undefined {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const normalized = stripMarkdownDecoration(lines[i]);
+    if (normalized === PASS_LITERAL || normalized.startsWith(FLAGGED_PREFIX)) {
+      return { index: i, normalized };
+    }
+  }
+  return undefined;
+}
 
 /**
  * Parses the verifier's final `agent.message` text against its system
- * prompt's exact contract ("respond with EXACTLY one of: PASS / FLAGGED:
- * <the specific discrepancy>" — see `agents/carve-verifier.agent.yaml`).
- * Anything else is a session-level anomaly (thrown), never folded in as a
- * silent third result type.
+ * prompt's contract ("respond with EXACTLY one of: PASS / FLAGGED: <the
+ * specific discrepancy>, no markdown, no extra text" — see
+ * `agents/carve-verifier.agent.yaml`). Tolerates the cosmetic formatting
+ * slips documented above since none of them change the actual verdict.
+ * Anything else — a genuinely different shape, not just decoration or
+ * placement around the same two outcomes — is still a session-level
+ * anomaly (thrown), never folded in as a silent third result type.
  */
 function parseVerifierResult(text: string, sessionId: string): VerifierResult {
   const trimmed = text.trim();
+  const lines = trimmed.split("\n");
+  const verdict = findVerdictLine(lines);
 
-  if (trimmed === "PASS") {
+  if (!verdict) {
+    throw new AgentSessionError(
+      `Verifier session ${sessionId} returned an unexpected output shape ` +
+        `(expected exactly "PASS" or "FLAGGED: <discrepancy>"): ` +
+        `${JSON.stringify(text)}`,
+      sessionId,
+    );
+  }
+
+  if (verdict.normalized === PASS_LITERAL) {
     return "PASS";
   }
 
-  if (trimmed.startsWith(FLAGGED_PREFIX)) {
-    const discrepancy = trimmed.slice(FLAGGED_PREFIX.length).trim();
-    if (discrepancy.length === 0) {
-      throw new AgentSessionError(
-        `Verifier session ${sessionId} returned "FLAGGED:" with no ` +
-          "discrepancy text, which doesn't match its contract of exactly " +
-          '"PASS" or "FLAGGED: <the specific discrepancy>".',
-        sessionId,
-      );
-    }
-    return { flagged: discrepancy };
-  }
+  const sameLineDiscrepancy = verdict.normalized.slice(FLAGGED_PREFIX.length).trim();
+  const after = lines.slice(verdict.index + 1).join("\n").trim();
+  const before = lines.slice(0, verdict.index).join("\n").trim();
+  // Prefer whichever side actually holds the explanation — a header-then-
+  // detail response has it after, a reasoning-then-verdict response has it
+  // before, and a bare one-line "FLAGGED: x" has neither.
+  const discrepancy = after.length > 0 ? after : before.length > 0 ? before : sameLineDiscrepancy;
 
-  throw new AgentSessionError(
-    `Verifier session ${sessionId} returned an unexpected output shape ` +
-      `(expected exactly "PASS" or "FLAGGED: <discrepancy>"): ` +
-      `${JSON.stringify(text)}`,
-    sessionId,
-  );
+  if (discrepancy.length === 0) {
+    throw new AgentSessionError(
+      `Verifier session ${sessionId} returned "FLAGGED:" with no ` +
+        "discrepancy text, which doesn't match its contract of exactly " +
+        '"PASS" or "FLAGGED: <the specific discrepancy>".',
+      sessionId,
+    );
+  }
+  return { flagged: discrepancy };
 }
 
 /**

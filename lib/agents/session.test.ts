@@ -241,6 +241,68 @@ describe("runVerifierSession — result parsing", () => {
       AgentSessionError,
     );
   });
+
+  // The two cases below reproduce, verbatim, the response shapes that a live
+  // 2026-08-15 eval against the real claude-haiku-4-5 verifier actually
+  // produced (see `scripts/eval-verifier.ts`'s run history) — not
+  // hypothetical formatting. Both were previously thrown away as
+  // AgentSessionErrors despite the verifier having reached the correct
+  // verdict.
+
+  it("parses a FLAGGED response wrapped in markdown bold, using the trailing explanation as the discrepancy", async () => {
+    mockStream.mockResolvedValue(
+      mockEventStream([
+        agentMessage(
+          "**FLAGGED: Margin calculation discrepancy**\n\n" +
+            "The generated text states a figure that does not match the " +
+            "ground-truth waterfall inputs.",
+        ),
+        idleEndTurn(),
+      ]),
+    );
+
+    const result = await runVerifierSession("Verify this content.");
+    expect(result.result).toEqual({
+      flagged:
+        "The generated text states a figure that does not match the " +
+        "ground-truth waterfall inputs.",
+    });
+  });
+
+  it("parses a clean PASS even when followed by unrequested trailing explanation", async () => {
+    mockStream.mockResolvedValue(
+      mockEventStream([
+        agentMessage(
+          "PASS\n\nThe statement matches the ground truth exactly.",
+        ),
+        idleEndTurn(),
+      ]),
+    );
+
+    const result = await runVerifierSession("Verify this content.");
+    expect(result.result).toBe("PASS");
+  });
+
+  it("parses a bare PASS that comes AFTER reasoning instead of before it", async () => {
+    // Reproduces claude-sonnet-4-6's actual output shape post-escalation
+    // (2026-08-15 live eval): it reasons through each check first, then
+    // concludes with the bare verdict on the last line, despite the system
+    // prompt asking for the verdict alone with nothing else.
+    mockStream.mockResolvedValue(
+      mockEventStream([
+        agentMessage(
+          "Every claim checks out against the ground truth:\n\n" +
+            "- $4.50 wholesale / 55% retailer margin — matches.\n" +
+            "- 40% minimum margin — confirmed.\n\n" +
+            "PASS",
+        ),
+        idleEndTurn(),
+      ]),
+    );
+
+    const result = await runVerifierSession("Verify this content.");
+    expect(result.result).toBe("PASS");
+  });
 });
 
 describe("session.error handling", () => {
