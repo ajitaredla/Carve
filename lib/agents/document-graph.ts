@@ -17,10 +17,17 @@
  * `lib/agents/completeness.ts`'s `runCompletenessCheck` (the new checker).
  */
 
-import { runGeneratorSession, runVerifierSession, sendFollowUp } from "./session";
+import {
+  runGeneratorSession,
+  runVerifierSession,
+  sendFollowUp,
+  VERIFIER_MODEL,
+  type ModelCall,
+} from "./session";
 import { runCompletenessCheck, type CheckResult } from "./completeness";
 import { runNode, allChecksPassed, combineFlaggedMessage } from "./graph";
 import { GENERATION_MODEL, type GenerationLogEntry, type VerificationResultLabel } from "./generate";
+import { traceSurface } from "@/lib/observability/langfuse";
 import type { DocumentType } from "@/lib/documents/types";
 
 export interface DocumentGraphOptions {
@@ -30,6 +37,8 @@ export interface DocumentGraphOptions {
   brandInputSnapshot: Record<string, unknown>;
 }
 
+export type { ModelCall };
+
 export interface DocumentGraphFinal {
   status: "final";
   text: string;
@@ -38,6 +47,7 @@ export interface DocumentGraphFinal {
   /** Index into `logEntries` for the GENERATOR row whose `output` equals
    * `text` — same contract as `generate.ts`'s `canonicalLogEntryIndex`. */
   canonicalLogEntryIndex: number;
+  modelCalls: ModelCall[];
 }
 
 export interface DocumentGraphNeedsReview {
@@ -49,17 +59,25 @@ export interface DocumentGraphNeedsReview {
   /** Same information, split by checker, for finer-grained UI later. */
   discrepancies: { fact?: string; completeness?: string };
   logEntries: GenerationLogEntry[];
+  modelCalls: ModelCall[];
 }
 
 export type DocumentGraphResult = DocumentGraphFinal | DocumentGraphNeedsReview;
 
 function normalizeFactResult(
-  result: Awaited<ReturnType<typeof runVerifierSession>>["result"],
+  verifierResult: Awaited<ReturnType<typeof runVerifierSession>>,
 ): CheckResult {
+  const { result, usage } = verifierResult;
   if (result === "PASS") {
-    return { checkerKind: "fact", verdict: "pass" };
+    return { checkerKind: "fact", verdict: "pass", model: VERIFIER_MODEL, usage };
   }
-  return { checkerKind: "fact", verdict: "flagged", discrepancy: result.flagged };
+  return {
+    checkerKind: "fact",
+    verdict: "flagged",
+    discrepancy: result.flagged,
+    model: VERIFIER_MODEL,
+    usage,
+  };
 }
 
 function checkOutput(result: CheckResult): string {
@@ -68,6 +86,10 @@ function checkOutput(result: CheckResult): string {
 
 function checkVerificationResult(result: CheckResult): VerificationResultLabel {
   return result.verdict === "pass" ? "pass" : "flagged";
+}
+
+function toModelCall(result: CheckResult): ModelCall {
+  return { model: result.model, usage: result.usage };
 }
 
 /** Runs both checkers in parallel against the same text, for one attempt. */
@@ -79,7 +101,7 @@ async function runChecks(
 ): Promise<[CheckResult, CheckResult]> {
   const [fact, completeness] = await Promise.all([
     runNode({ surface, node: "fact_check" }, async () =>
-      normalizeFactResult((await runVerifierSession(factVerifyPrompt(text))).result),
+      normalizeFactResult(await runVerifierSession(factVerifyPrompt(text))),
     ),
     runNode({ surface, node: "completeness_check" }, () =>
       runCompletenessCheck(documentType, text),
@@ -89,6 +111,34 @@ async function runChecks(
 }
 
 export async function generateDocumentWithChecks(
+  kickoffPrompt: string,
+  factVerifyPrompt: (text: string) => string,
+  documentType: DocumentType,
+  options: DocumentGraphOptions,
+): Promise<DocumentGraphResult> {
+  return traceSurface(
+    `generate-${options.surface}`,
+    {
+      surface: options.surface,
+      promptVersion: options.promptVersion,
+      retailerDataVersion: options.retailerDataVersion,
+    },
+    async (trace) => {
+      const result = await runDocumentGraph(
+        kickoffPrompt,
+        factVerifyPrompt,
+        documentType,
+        options,
+      );
+      trace.update({
+        output: result.status === "final" ? result.text : `needs_review: ${result.discrepancy}`,
+      });
+      return result;
+    },
+  );
+}
+
+async function runDocumentGraph(
   kickoffPrompt: string,
   factVerifyPrompt: (text: string) => string,
   documentType: DocumentType,
@@ -142,6 +192,11 @@ export async function generateDocumentWithChecks(
       generatorSessionId: generation.sessionId,
       logEntries,
       canonicalLogEntryIndex: 0,
+      modelCalls: [
+        { model: GENERATION_MODEL, usage: generation.usage },
+        toModelCall(fact1),
+        toModelCall(completeness1),
+      ],
     };
   }
 
@@ -196,6 +251,14 @@ export async function generateDocumentWithChecks(
       generatorSessionId: generation.sessionId,
       logEntries,
       canonicalLogEntryIndex: correctionEntryIndex,
+      modelCalls: [
+        { model: GENERATION_MODEL, usage: generation.usage },
+        toModelCall(fact1),
+        toModelCall(completeness1),
+        { model: GENERATION_MODEL, usage: correction.usage },
+        toModelCall(fact2),
+        toModelCall(completeness2),
+      ],
     };
   }
 
@@ -221,5 +284,13 @@ export async function generateDocumentWithChecks(
         completeness2.verdict === "flagged" ? completeness2.discrepancy : undefined,
     },
     logEntries,
+    modelCalls: [
+      { model: GENERATION_MODEL, usage: generation.usage },
+      toModelCall(fact1),
+      toModelCall(completeness1),
+      { model: GENERATION_MODEL, usage: correction.usage },
+      toModelCall(fact2),
+      toModelCall(completeness2),
+    ],
   };
 }

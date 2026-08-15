@@ -24,6 +24,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { DocumentType } from "@/lib/documents/types";
+import { startModelObservation } from "@/lib/observability/langfuse";
+import type { ModelUsage } from "@/lib/agents/session";
 
 let client: Anthropic | undefined;
 
@@ -36,9 +38,18 @@ function getClient(): Anthropic {
 
 export const COMPLETENESS_MODEL = "claude-haiku-4-5";
 
+/** `model`/`usage` on every variant (2026-08-15) — lib/spend/guard.ts's
+ * recordSpendForCalls needs both, regardless of a checker's verdict, since
+ * a flagged check consumed exactly as many real tokens as a passing one. */
 export type CheckResult =
-  | { checkerKind: "fact" | "completeness"; verdict: "pass" }
-  | { checkerKind: "fact" | "completeness"; verdict: "flagged"; discrepancy: string };
+  | { checkerKind: "fact" | "completeness"; verdict: "pass"; model: string; usage: ModelUsage }
+  | {
+      checkerKind: "fact" | "completeness";
+      verdict: "flagged";
+      discrepancy: string;
+      model: string;
+      usage: ModelUsage;
+    };
 
 export class CompletenessCheckError extends Error {
   constructor(message: string) {
@@ -96,6 +107,13 @@ function isMockMode(): boolean {
   return process.env.CARVE_MOCK_AGENTS === "1";
 }
 
+const ZERO_USAGE: ModelUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+};
+
 function mockCompletenessCheck(generatedText: string): CheckResult {
   if (generatedText.includes("MOCK_ERROR_ME")) {
     throw new CompletenessCheckError(
@@ -107,9 +125,16 @@ function mockCompletenessCheck(generatedText: string): CheckResult {
       checkerKind: "completeness",
       verdict: "flagged",
       discrepancy: "[mock] missing required elements: MOCK_INCOMPLETE_ME marker present",
+      model: COMPLETENESS_MODEL,
+      usage: ZERO_USAGE,
     };
   }
-  return { checkerKind: "completeness", verdict: "pass" };
+  return {
+    checkerKind: "completeness",
+    verdict: "pass",
+    model: COMPLETENESS_MODEL,
+    usage: ZERO_USAGE,
+  };
 }
 
 /**
@@ -118,17 +143,42 @@ function mockCompletenessCheck(generatedText: string): CheckResult {
  * failure — callers should treat this the same as any other unexpected
  * generation-layer failure (see `lib/errors/friendly.ts`).
  */
+function checkSummary(result: CheckResult): string {
+  return result.verdict === "pass" ? "PASS" : `FLAGGED: ${result.discrepancy}`;
+}
+
+function toModelUsage(usage: {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+}): ModelUsage {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
+    cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+  };
+}
+
 export async function runCompletenessCheck(
   documentType: DocumentType,
   generatedText: string,
 ): Promise<CheckResult> {
-  if (isMockMode()) {
-    return mockCompletenessCheck(generatedText);
-  }
-
-  const checklist = DOCUMENT_COMPLETENESS_CHECKLISTS[documentType];
+  const observation = startModelObservation("check-completeness", {
+    model: COMPLETENESS_MODEL,
+    input: `[${documentType}] ${generatedText}`,
+    role: "completeness_checker",
+  });
 
   try {
+    if (isMockMode()) {
+      const result = mockCompletenessCheck(generatedText);
+      observation.ok(checkSummary(result), ZERO_USAGE);
+      return result;
+    }
+
+    const checklist = DOCUMENT_COMPLETENESS_CHECKLISTS[documentType];
     const message = await getClient().messages.parse({
       model: COMPLETENESS_MODEL,
       max_tokens: 512,
@@ -166,16 +216,20 @@ export async function runCompletenessCheck(
       );
     }
 
-    if (parsed.complete) {
-      return { checkerKind: "completeness", verdict: "pass" };
-    }
-
-    return {
-      checkerKind: "completeness",
-      verdict: "flagged",
-      discrepancy: `Missing required elements: ${parsed.missing.join(", ")}`,
-    };
+    const usage = toModelUsage(message.usage);
+    const result: CheckResult = parsed.complete
+      ? { checkerKind: "completeness", verdict: "pass", model: COMPLETENESS_MODEL, usage }
+      : {
+          checkerKind: "completeness",
+          verdict: "flagged",
+          discrepancy: `Missing required elements: ${parsed.missing.join(", ")}`,
+          model: COMPLETENESS_MODEL,
+          usage,
+        };
+    observation.ok(checkSummary(result), usage);
+    return result;
   } catch (error) {
+    observation.error(error);
     if (error instanceof CompletenessCheckError) {
       throw error;
     }

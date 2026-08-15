@@ -25,6 +25,8 @@ vi.mock("./session", () => ({
   runGeneratorSession: mockRunGeneratorSession,
   runVerifierSession: mockRunVerifierSession,
   sendFollowUp: mockSendFollowUp,
+  GENERATOR_MODEL: "claude-haiku-4-5",
+  VERIFIER_MODEL: "claude-sonnet-4-6",
 }));
 
 vi.mock("./completeness", () => ({

@@ -60,6 +60,17 @@ import type {
   BetaManagedAgentsStreamSessionEvents,
   BetaManagedAgentsTextBlock,
 } from "@anthropic-ai/sdk/resources/beta/sessions/events";
+import { startModelObservation } from "@/lib/observability/langfuse";
+
+/** Matches `agents/carve-generator.agent.yaml`'s `model` field. Used for
+ * Langfuse observation metadata, not session creation — Managed Agents reads
+ * the model from the agent config itself (`CARVE_GENERATOR_AGENT_ID`), this
+ * is purely so cost/token tracking shows the right model name. */
+export const GENERATOR_MODEL = "claude-haiku-4-5";
+/** Matches `agents/carve-verifier.agent.yaml`'s `model` field — escalated
+ * from claude-haiku-4-5 on 2026-08-15, see that file for why. Same "for
+ * observability only" caveat as GENERATOR_MODEL above. */
+export const VERIFIER_MODEL = "claude-sonnet-4-6";
 
 // ---------------------------------------------------------------------------
 // Client
@@ -106,6 +117,15 @@ export interface ModelUsage {
   outputTokens: number;
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
+}
+
+/** One entry per real, billed model call — the shape
+ * `lib/spend/guard.ts`'s `recordSpendForCalls` consumes directly, so spend
+ * is costed per-model rather than summing token counts across
+ * differently-priced models before costing them. */
+export interface ModelCall {
+  model: string;
+  usage: ModelUsage;
 }
 
 function emptyUsage(): ModelUsage {
@@ -466,21 +486,35 @@ function userMessageEvent(text: string) {
 export async function runGeneratorSession(
   prompt: string,
 ): Promise<GeneratorSessionResult> {
-  if (isMockMode()) {
-    return mockRunGeneratorSession(prompt);
+  const observation = startModelObservation("generate-content", {
+    model: GENERATOR_MODEL,
+    input: prompt,
+    role: "generator",
+  });
+
+  try {
+    if (isMockMode()) {
+      const result = await mockRunGeneratorSession(prompt);
+      observation.ok(result.text, result.usage);
+      return result;
+    }
+
+    const client = getClient();
+    const session = await createSession(
+      client,
+      requireEnv("CARVE_GENERATOR_AGENT_ID"),
+    );
+
+    const { text, usage } = await driveTurn(client, session.id, () =>
+      client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
+    );
+
+    observation.ok(text, usage);
+    return { text, sessionId: session.id, usage };
+  } catch (error) {
+    observation.error(error);
+    throw error;
   }
-
-  const client = getClient();
-  const session = await createSession(
-    client,
-    requireEnv("CARVE_GENERATOR_AGENT_ID"),
-  );
-
-  const { text, usage } = await driveTurn(client, session.id, () =>
-    client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
-  );
-
-  return { text, sessionId: session.id, usage };
 }
 
 // ---------------------------------------------------------------------------
@@ -531,14 +565,29 @@ export async function sendFollowUp(
   sessionId: string,
   message: string,
 ): Promise<{ text: string; usage: ModelUsage }> {
-  if (isMockMode()) {
-    return mockSendFollowUp(sessionId, message);
-  }
+  const observation = startModelObservation("regenerate-content", {
+    model: GENERATOR_MODEL,
+    input: message,
+    role: "generator",
+  });
 
-  const client = getClient();
-  return driveTurn(client, sessionId, () =>
-    client.beta.sessions.events.send(sessionId, userMessageEvent(message)),
-  );
+  try {
+    if (isMockMode()) {
+      const result = await mockSendFollowUp(sessionId, message);
+      observation.ok(result.text, result.usage);
+      return result;
+    }
+
+    const client = getClient();
+    const result = await driveTurn(client, sessionId, () =>
+      client.beta.sessions.events.send(sessionId, userMessageEvent(message)),
+    );
+    observation.ok(result.text, result.usage);
+    return result;
+  } catch (error) {
+    observation.error(error);
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -546,40 +595,91 @@ export async function sendFollowUp(
 // ---------------------------------------------------------------------------
 
 const FLAGGED_PREFIX = "FLAGGED:";
+const PASS_LITERAL = "PASS";
+
+/**
+ * A 2026-08-15 live eval (`scripts/eval-verifier.ts`) against the deployed
+ * verifier found real formatting slips around an otherwise-correct verdict:
+ * markdown decoration ("**FLAGGED: Margin calculation discrepancy**"), a
+ * clean verdict followed by unrequested trailing prose, AND — found only
+ * after escalating the model per that same eval's false-negative finding —
+ * the model reasoning through its checks FIRST and putting the bare verdict
+ * on the LAST line instead of the first, despite the system prompt asking
+ * for the verdict alone. None of these change the actual verdict, only
+ * where/how it's decorated. Stripped per-line so decoration on one line
+ * can't eat content that's part of a legitimate multi-line explanation.
+ */
+function stripMarkdownDecoration(line: string): string {
+  return line.replace(/^[\s*_#>-]+|[\s*_]+$/g, "");
+}
+
+interface VerdictLine {
+  index: number;
+  normalized: string;
+}
+
+/**
+ * Scans from the LAST line backward (not forward) so a compliant single-line
+ * response (verdict = the only line = both first and last) still matches
+ * immediately, while a response that explains itself before concluding with
+ * a bare verdict ("<reasoning...>\n\nPASS") is found at its actual
+ * conclusion rather than missed because line 1 wasn't the verdict.
+ */
+function findVerdictLine(lines: string[]): VerdictLine | undefined {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const normalized = stripMarkdownDecoration(lines[i]);
+    if (normalized === PASS_LITERAL || normalized.startsWith(FLAGGED_PREFIX)) {
+      return { index: i, normalized };
+    }
+  }
+  return undefined;
+}
 
 /**
  * Parses the verifier's final `agent.message` text against its system
- * prompt's exact contract ("respond with EXACTLY one of: PASS / FLAGGED:
- * <the specific discrepancy>" — see `agents/carve-verifier.agent.yaml`).
- * Anything else is a session-level anomaly (thrown), never folded in as a
- * silent third result type.
+ * prompt's contract ("respond with EXACTLY one of: PASS / FLAGGED: <the
+ * specific discrepancy>, no markdown, no extra text" — see
+ * `agents/carve-verifier.agent.yaml`). Tolerates the cosmetic formatting
+ * slips documented above since none of them change the actual verdict.
+ * Anything else — a genuinely different shape, not just decoration or
+ * placement around the same two outcomes — is still a session-level
+ * anomaly (thrown), never folded in as a silent third result type.
  */
 function parseVerifierResult(text: string, sessionId: string): VerifierResult {
   const trimmed = text.trim();
+  const lines = trimmed.split("\n");
+  const verdict = findVerdictLine(lines);
 
-  if (trimmed === "PASS") {
+  if (!verdict) {
+    throw new AgentSessionError(
+      `Verifier session ${sessionId} returned an unexpected output shape ` +
+        `(expected exactly "PASS" or "FLAGGED: <discrepancy>"): ` +
+        `${JSON.stringify(text)}`,
+      sessionId,
+    );
+  }
+
+  if (verdict.normalized === PASS_LITERAL) {
     return "PASS";
   }
 
-  if (trimmed.startsWith(FLAGGED_PREFIX)) {
-    const discrepancy = trimmed.slice(FLAGGED_PREFIX.length).trim();
-    if (discrepancy.length === 0) {
-      throw new AgentSessionError(
-        `Verifier session ${sessionId} returned "FLAGGED:" with no ` +
-          "discrepancy text, which doesn't match its contract of exactly " +
-          '"PASS" or "FLAGGED: <the specific discrepancy>".',
-        sessionId,
-      );
-    }
-    return { flagged: discrepancy };
-  }
+  const sameLineDiscrepancy = verdict.normalized.slice(FLAGGED_PREFIX.length).trim();
+  const after = lines.slice(verdict.index + 1).join("\n").trim();
+  const before = lines.slice(0, verdict.index).join("\n").trim();
+  // Prefer whichever side actually holds the explanation — a header-then-
+  // detail response has it after, a reasoning-then-verdict response has it
+  // before, and a bare one-line "FLAGGED: x" has neither.
+  const discrepancy = after.length > 0 ? after : before.length > 0 ? before : sameLineDiscrepancy;
 
-  throw new AgentSessionError(
-    `Verifier session ${sessionId} returned an unexpected output shape ` +
-      `(expected exactly "PASS" or "FLAGGED: <discrepancy>"): ` +
-      `${JSON.stringify(text)}`,
-    sessionId,
-  );
+  if (discrepancy.length === 0) {
+    throw new AgentSessionError(
+      `Verifier session ${sessionId} returned "FLAGGED:" with no ` +
+        "discrepancy text, which doesn't match its contract of exactly " +
+        '"PASS" or "FLAGGED: <the specific discrepancy>".',
+      sessionId,
+    );
+  }
+  return { flagged: discrepancy };
 }
 
 /**
@@ -589,28 +689,43 @@ function parseVerifierResult(text: string, sessionId: string): VerifierResult {
  * `sendFollowUp` for the verifier (see the 6.1a decision above: continuation
  * applies to the generator's correction step, not to verification itself).
  */
+function verdictSummary(result: VerifierResult): string {
+  return result === "PASS" ? "PASS" : `FLAGGED: ${result.flagged}`;
+}
+
 export async function runVerifierSession(
   prompt: string,
 ): Promise<VerifierSessionResult> {
-  if (isMockMode()) {
-    return mockRunVerifierSession(prompt);
+  const observation = startModelObservation("verify-content", {
+    model: VERIFIER_MODEL,
+    input: prompt,
+    role: "verifier",
+  });
+
+  try {
+    if (isMockMode()) {
+      const result = await mockRunVerifierSession(prompt);
+      observation.ok(verdictSummary(result.result), result.usage);
+      return result;
+    }
+
+    const client = getClient();
+    const session = await createSession(
+      client,
+      requireEnv("CARVE_VERIFIER_AGENT_ID"),
+    );
+
+    const { text, usage } = await driveTurn(client, session.id, () =>
+      client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
+    );
+
+    const result = parseVerifierResult(text, session.id);
+    observation.ok(verdictSummary(result), usage);
+    return { result, sessionId: session.id, usage };
+  } catch (error) {
+    observation.error(error);
+    throw error;
   }
-
-  const client = getClient();
-  const session = await createSession(
-    client,
-    requireEnv("CARVE_VERIFIER_AGENT_ID"),
-  );
-
-  const { text, usage } = await driveTurn(client, session.id, () =>
-    client.beta.sessions.events.send(session.id, userMessageEvent(prompt)),
-  );
-
-  return {
-    result: parseVerifierResult(text, session.id),
-    sessionId: session.id,
-    usage,
-  };
 }
 
 // ---------------------------------------------------------------------------

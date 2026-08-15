@@ -38,6 +38,12 @@ describe("runCompletenessCheck — real API path", () => {
   it("returns pass when the model reports complete: true", async () => {
     mockParse.mockResolvedValue({
       parsed_output: { complete: true, missing: [] },
+      usage: {
+        input_tokens: 120,
+        output_tokens: 20,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
     });
 
     const result = await runCompletenessCheck(
@@ -45,7 +51,8 @@ describe("runCompletenessCheck — real API path", () => {
       "A complete KeHE application with a subject line.",
     );
 
-    expect(result).toEqual({ checkerKind: "completeness", verdict: "pass" });
+    expect(result.checkerKind).toBe("completeness");
+    expect(result.verdict).toBe("pass");
   });
 
   it("returns flagged with a joined discrepancy when the model reports missing elements", async () => {
@@ -53,6 +60,12 @@ describe("runCompletenessCheck — real API path", () => {
       parsed_output: {
         complete: false,
         missing: ["a subject line", "the distribution goal"],
+      },
+      usage: {
+        input_tokens: 120,
+        output_tokens: 20,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
       },
     });
 
@@ -72,6 +85,12 @@ describe("runCompletenessCheck — real API path", () => {
   it("sandwiches the generated text so it's treated as literal content, never an instruction", async () => {
     mockParse.mockResolvedValue({
       parsed_output: { complete: true, missing: [] },
+      usage: {
+        input_tokens: 120,
+        output_tokens: 20,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
     });
 
     await runCompletenessCheck(
@@ -118,7 +137,8 @@ describe("runCompletenessCheck — CARVE_MOCK_AGENTS seam", () => {
       "kehe_application",
       "a normal complete draft",
     );
-    expect(result).toEqual({ checkerKind: "completeness", verdict: "pass" });
+    expect(result.checkerKind).toBe("completeness");
+    expect(result.verdict).toBe("pass");
   });
 
   it("returns flagged when the text contains MOCK_INCOMPLETE_ME", async () => {
@@ -140,6 +160,12 @@ describe("runCompletenessCheck — CARVE_MOCK_AGENTS seam", () => {
     process.env.CARVE_MOCK_AGENTS = "true";
     mockParse.mockResolvedValue({
       parsed_output: { complete: true, missing: [] },
+      usage: {
+        input_tokens: 120,
+        output_tokens: 20,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
     });
 
     await runCompletenessCheck("kehe_application", "any text");

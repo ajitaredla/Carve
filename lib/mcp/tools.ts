@@ -457,6 +457,8 @@ const GetBrandContextOutput = z
       category: z.string(),
       dtcAnnualRevenue: z.number(),
       description: z.string().nullable(),
+      wholesalePrice: z.number(),
+      retailPrice: z.number(),
     }),
     latestAssessment: z
       .object({
@@ -547,6 +549,8 @@ function registerGetBrandContext(server: McpServer): void {
             category: brand.category,
             dtcAnnualRevenue: decimalToNumber(brand.dtcAnnualRevenue),
             description: brand.description,
+            wholesalePrice: decimalToNumber(brand.wholesalePrice),
+            retailPrice: decimalToNumber(brand.retailPrice),
           },
           latestAssessment: latest
             ? {
@@ -665,6 +669,19 @@ const GetVerificationFactsOutput = z
       blockerStatement: z.string(),
       createdAt: z.string(),
     }),
+    // The brand's OWN stated pricing — distinct from costWaterfall.msrp
+    // below. wholesalePrice/retailPrice are what a retailer-margin claim
+    // ("your $X wholesale gives Y% margin") is computed from; msrp is a
+    // separate figure for the founder/investor-margin waterfall calculation.
+    // Added 2026-08-15 after a live eval showed the verifier had no tool
+    // access to these fields at all and was cross-checking retailer-margin
+    // claims against msrp instead, producing confident false FLAGGEDs — see
+    // agents/carve-verifier.agent.yaml's system prompt for the matching
+    // "which field to use for which claim" instruction.
+    brand: z.object({
+      wholesalePrice: z.number(),
+      retailPrice: z.number(),
+    }),
     costWaterfall: CostWaterfallOutput.nullable(),
   })
   .strict();
@@ -677,7 +694,15 @@ function registerGetVerificationFacts(server: McpServer): void {
       description:
         "Fetch the exact, persisted source-of-truth numbers for an " +
         "assessment (and its cost waterfall, if any) — the six dimension " +
-        "scores, the blocker, and every stored waterfall figure.\n\n" +
+        "scores, the blocker, the brand's own wholesale/retail pricing, and " +
+        "every stored waterfall figure.\n\n" +
+        "IMPORTANT — brand.wholesalePrice/retailPrice and " +
+        "costWaterfall.msrp are DIFFERENT figures for different purposes. " +
+        "Use brand.wholesalePrice/retailPrice to check a claim about the " +
+        "brand's own retailer margin (e.g. \"your $4.50 wholesale gives " +
+        "this retailer 55% margin\"). Use costWaterfall.msrp only for " +
+        "claims about the founder/investor-margin waterfall calculation. " +
+        "Do not cross-check one against the other.\n\n" +
         "IMPORTANT — this alone is NOT sufficient to verify content that " +
         "cites specific retailer facts (a stated minimum margin %, a " +
         "certification name, a distributor requirement, a submission " +
@@ -716,7 +741,7 @@ function registerGetVerificationFacts(server: McpServer): void {
 
         const assessment = await prisma.assessment.findUnique({
           where: { id: assessmentId },
-          include: { retailer: true, costWaterfall: true },
+          include: { retailer: true, costWaterfall: true, brand: true },
         });
 
         if (!assessment) {
@@ -781,6 +806,10 @@ function registerGetVerificationFacts(server: McpServer): void {
             blockerDimension: assessment.blockerDimension,
             blockerStatement: assessment.blockerStatement,
             createdAt: assessment.createdAt.toISOString(),
+          },
+          brand: {
+            wholesalePrice: decimalToNumber(assessment.brand.wholesalePrice),
+            retailPrice: decimalToNumber(assessment.brand.retailPrice),
           },
           costWaterfall: costWaterfall
             ? {

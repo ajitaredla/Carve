@@ -25,6 +25,10 @@ import { AgentSessionError } from "@/lib/agents/session";
 import { CompletenessCheckError } from "@/lib/agents/completeness";
 import { ScoringInputMappingError } from "@/lib/scoring/map-retailer-requirements";
 import { WaterfallInputError } from "@/lib/waterfall/calculator";
+import {
+  SpendCapExceededError,
+  GenerationRateLimitExceededError,
+} from "@/lib/errors/generation-limits";
 
 export interface FriendlyError {
   /** Safe to render directly to the founder. */
@@ -74,6 +78,13 @@ export function toFriendlyGenerationError(
     return {
       message: `We couldn't calculate the waterfall: ${error.message}`,
     };
+  }
+
+  // SpendCapExceededError / GenerationRateLimitExceededError: both already
+  // carry a founder-actionable message (no internals, no secrets) — same
+  // "known, structured, safe to surface" reasoning as the two above.
+  if (error instanceof SpendCapExceededError || error instanceof GenerationRateLimitExceededError) {
+    return { message: error.message };
   }
 
   // Unexpected internals — Prisma errors, missing env config (confirmed in
