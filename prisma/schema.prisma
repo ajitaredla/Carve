@@ -278,6 +278,29 @@ model GenerationLog {
   @@map("generation_logs")
 }
 
+/// Cost audit trail for lib/spend/guard.ts's daily spend cap (2026-08-15).
+/// Deliberately a separate table from GenerationLog rather than adding
+/// cost columns there: GenerationLog is one row per CHECKER PASS (fact/
+/// completeness can each write multiple rows per generation attempt), so
+/// summing its rows would double- or triple-count a single real API call's
+/// cost. One AiSpendLedger row = one real, billed model call, written once
+/// per completed generateWithVerification/generateDocumentWithChecks call
+/// (see lib/spend/guard.ts's recordSpend). No FK to Brand on purpose — this
+/// is an append-only audit ledger that should outlive the brand row it was
+/// recorded against, the same reasoning GenerationLog already applies to
+/// its own nullable assessmentId/costWaterfallId.
+model AiSpendLedger {
+  id        String   @id @default(uuid())
+  brandId   String   @map("brand_id")
+  surface   String
+  costUsd   Decimal  @map("cost_usd")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([brandId, createdAt])
+  @@map("ai_spend_ledger")
+}
+
 // A retailer-requirement correction the carve-weekly-scout agent found by
 // checking a retailer's real published pages against Retailer.requirements —
 // staged for human review, never applied automatically. See

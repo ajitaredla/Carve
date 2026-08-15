@@ -87,6 +87,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { createCarveMcpServer } from "@/lib/mcp/tools";
+import { checkMcpRateLimit } from "@/lib/mcp/rate-limit";
 
 // Prisma's `@prisma/adapter-pg` driver adapter needs the Node.js runtime
 // (raw TCP/pg), not the Edge runtime.
@@ -155,6 +156,16 @@ function unauthorizedResponse(): NextResponse {
   );
 }
 
+function rateLimitedResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error: "rate_limited",
+      message: "Too many requests to the Carve MCP server. Try again shortly.",
+    },
+    { status: 429, headers: { "Retry-After": "60" } },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Streamable HTTP dispatch
 // ---------------------------------------------------------------------------
@@ -188,6 +199,13 @@ async function handleMcpPost(request: NextRequest): Promise<Response> {
 export async function POST(request: NextRequest): Promise<Response> {
   if (!isAuthorized(request)) {
     return unauthorizedResponse();
+  }
+  // Rate-limit AFTER auth, not before: an unauthenticated caller shouldn't
+  // be able to exhaust the shared window and lock out the real agents —
+  // only requests that already presented the valid bearer token count
+  // against it.
+  if (!checkMcpRateLimit()) {
+    return rateLimitedResponse();
   }
   return handleMcpPost(request);
 }

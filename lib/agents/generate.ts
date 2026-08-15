@@ -112,7 +112,9 @@ import {
   runGeneratorSession,
   runVerifierSession,
   sendFollowUp,
+  VERIFIER_MODEL,
   type ModelUsage,
+  type ModelCall,
 } from "./session";
 import { traceSurface } from "@/lib/observability/langfuse";
 import type { Prisma } from "@prisma/client";
@@ -258,6 +260,9 @@ export interface GenerateWithVerificationFinal {
    * `output` equals `text` above — the row a caller persisting a
    * `GeneratedDocument` should link via its NOT-NULL `generationLogId` FK. */
   canonicalLogEntryIndex: number;
+  /** Same calls as `usage` above, reshaped for `lib/spend/guard.ts`'s
+   * recordSpendForCalls (per-model, not pre-summed — see that file). */
+  modelCalls: ModelCall[];
 }
 
 export interface GenerateWithVerificationNeedsReview {
@@ -266,6 +271,10 @@ export interface GenerateWithVerificationNeedsReview {
    * verification — the one after the one-and-only regeneration attempt. */
   lastDiscrepancy: string;
   logEntries: GenerationLogEntry[];
+  /** A needs_review outcome still consumed real tokens across up to 4 calls
+   * (generate, verify, regenerate, re-verify) — recorded for spend tracking
+   * the same as a final outcome, see lib/spend/guard.ts. */
+  modelCalls: ModelCall[];
 }
 
 export type GenerateWithVerificationResult =
@@ -334,6 +343,10 @@ async function runGenerateWithVerification(
         buildEntry("PASS", "pass"),
       ],
       canonicalLogEntryIndex: 0,
+      modelCalls: [
+        { model: GENERATION_MODEL, usage: generation.usage },
+        { model: VERIFIER_MODEL, usage: verification.usage },
+      ],
     };
   }
 
@@ -364,6 +377,12 @@ async function runGenerateWithVerification(
         buildEntry("PASS", "pass"),
       ],
       canonicalLogEntryIndex: 2,
+      modelCalls: [
+        { model: GENERATION_MODEL, usage: generation.usage },
+        { model: VERIFIER_MODEL, usage: verification.usage },
+        { model: GENERATION_MODEL, usage: correction.usage },
+        { model: VERIFIER_MODEL, usage: reVerification.usage },
+      ],
     };
   }
 
@@ -372,6 +391,12 @@ async function runGenerateWithVerification(
   return {
     status: "needs_review",
     lastDiscrepancy: secondDiscrepancy,
+    modelCalls: [
+      { model: GENERATION_MODEL, usage: generation.usage },
+      { model: VERIFIER_MODEL, usage: verification.usage },
+      { model: GENERATION_MODEL, usage: correction.usage },
+      { model: VERIFIER_MODEL, usage: reVerification.usage },
+    ],
     logEntries: [
       buildEntry(generation.text, "regenerated"),
       buildEntry(`FLAGGED: ${firstDiscrepancy}`, "flagged"),

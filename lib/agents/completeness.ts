@@ -38,9 +38,18 @@ function getClient(): Anthropic {
 
 export const COMPLETENESS_MODEL = "claude-haiku-4-5";
 
+/** `model`/`usage` on every variant (2026-08-15) — lib/spend/guard.ts's
+ * recordSpendForCalls needs both, regardless of a checker's verdict, since
+ * a flagged check consumed exactly as many real tokens as a passing one. */
 export type CheckResult =
-  | { checkerKind: "fact" | "completeness"; verdict: "pass" }
-  | { checkerKind: "fact" | "completeness"; verdict: "flagged"; discrepancy: string };
+  | { checkerKind: "fact" | "completeness"; verdict: "pass"; model: string; usage: ModelUsage }
+  | {
+      checkerKind: "fact" | "completeness";
+      verdict: "flagged";
+      discrepancy: string;
+      model: string;
+      usage: ModelUsage;
+    };
 
 export class CompletenessCheckError extends Error {
   constructor(message: string) {
@@ -98,6 +107,13 @@ function isMockMode(): boolean {
   return process.env.CARVE_MOCK_AGENTS === "1";
 }
 
+const ZERO_USAGE: ModelUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+};
+
 function mockCompletenessCheck(generatedText: string): CheckResult {
   if (generatedText.includes("MOCK_ERROR_ME")) {
     throw new CompletenessCheckError(
@@ -109,9 +125,16 @@ function mockCompletenessCheck(generatedText: string): CheckResult {
       checkerKind: "completeness",
       verdict: "flagged",
       discrepancy: "[mock] missing required elements: MOCK_INCOMPLETE_ME marker present",
+      model: COMPLETENESS_MODEL,
+      usage: ZERO_USAGE,
     };
   }
-  return { checkerKind: "completeness", verdict: "pass" };
+  return {
+    checkerKind: "completeness",
+    verdict: "pass",
+    model: COMPLETENESS_MODEL,
+    usage: ZERO_USAGE,
+  };
 }
 
 /**
@@ -151,12 +174,7 @@ export async function runCompletenessCheck(
   try {
     if (isMockMode()) {
       const result = mockCompletenessCheck(generatedText);
-      observation.ok(checkSummary(result), {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-      });
+      observation.ok(checkSummary(result), ZERO_USAGE);
       return result;
     }
 
@@ -198,14 +216,17 @@ export async function runCompletenessCheck(
       );
     }
 
+    const usage = toModelUsage(message.usage);
     const result: CheckResult = parsed.complete
-      ? { checkerKind: "completeness", verdict: "pass" }
+      ? { checkerKind: "completeness", verdict: "pass", model: COMPLETENESS_MODEL, usage }
       : {
           checkerKind: "completeness",
           verdict: "flagged",
           discrepancy: `Missing required elements: ${parsed.missing.join(", ")}`,
+          model: COMPLETENESS_MODEL,
+          usage,
         };
-    observation.ok(checkSummary(result), toModelUsage(message.usage));
+    observation.ok(checkSummary(result), usage);
     return result;
   } catch (error) {
     observation.error(error);

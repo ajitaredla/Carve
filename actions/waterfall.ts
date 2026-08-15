@@ -70,6 +70,8 @@ import { toScoringInput } from "@/lib/scoring/map-retailer-requirements";
 import { calculateWaterfall } from "@/lib/waterfall/calculator";
 import type { WaterfallResult } from "@/lib/waterfall/types";
 import { VERDICT_STATEMENT_PENDING } from "@/lib/waterfall/verdict-sentinel";
+import { assertUnderDailySpendCap, recordSpendForCalls } from "@/lib/spend/guard";
+import { assertUnderGenerationRateLimit } from "@/lib/rate-limit/generation";
 import {
   generateWithVerification,
   persistGenerationLogs,
@@ -238,6 +240,11 @@ export async function generateWaterfallVerdict(
     },
   );
 
+  // Guard against runaway spend/abuse BEFORE the AI call — see
+  // lib/spend/guard.ts and lib/rate-limit/generation.ts.
+  await assertUnderDailySpendCap();
+  await assertUnderGenerationRateLimit(brand.id);
+
   // Generation + verification happen OUTSIDE the DB transaction — these are
   // network calls to Managed Agents sessions and must not hold a transaction
   // open.
@@ -269,6 +276,8 @@ export async function generateWaterfallVerdict(
       },
     },
   );
+
+  await recordSpendForCalls(brand.id, SURFACE, result.modelCalls);
 
   await prisma.$transaction(async (tx) => {
     await persistGenerationLogs(tx, result.logEntries, {

@@ -51,7 +51,8 @@ describe("runCompletenessCheck — real API path", () => {
       "A complete KeHE application with a subject line.",
     );
 
-    expect(result).toEqual({ checkerKind: "completeness", verdict: "pass" });
+    expect(result.checkerKind).toBe("completeness");
+    expect(result.verdict).toBe("pass");
   });
 
   it("returns flagged with a joined discrepancy when the model reports missing elements", async () => {
@@ -136,7 +137,8 @@ describe("runCompletenessCheck — CARVE_MOCK_AGENTS seam", () => {
       "kehe_application",
       "a normal complete draft",
     );
-    expect(result).toEqual({ checkerKind: "completeness", verdict: "pass" });
+    expect(result.checkerKind).toBe("completeness");
+    expect(result.verdict).toBe("pass");
   });
 
   it("returns flagged when the text contains MOCK_INCOMPLETE_ME", async () => {

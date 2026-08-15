@@ -117,6 +117,7 @@ beforeEach(() => {
   // Default happy-path result — individual tests override this when the
   // generation outcome itself is what's under test.
   mockGenerateWithVerification.mockResolvedValue({
+    modelCalls: [],
     status: "final",
     text: "Default blocker statement.",
     logEntries: [],
@@ -150,7 +151,7 @@ describe("generateBlockerStatement", () => {
     });
     mockGenerateWithVerification.mockImplementation(async () => {
       callOrder.push("generate");
-      return { status: "final", text: "Blocker text.", logEntries: [] };
+      return { status: "final", text: "Blocker text.", logEntries: [], modelCalls: [] };
     });
 
     await generateBlockerStatement("sprouts");
@@ -159,6 +160,7 @@ describe("generateBlockerStatement", () => {
 
   it("on final: writes blockerStatement and persists GenerationLog rows linked to the assessment", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "Your $4.50 wholesale clears margin; the real blocker is your co-manufacturer relationship.",
       logEntries: [{ output: "entry" }],
@@ -192,6 +194,7 @@ describe("generateBlockerStatement", () => {
 
   it("on needs_review: does NOT write blockerStatement, but still persists GenerationLog rows", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "needs_review",
       lastDiscrepancy: "still cites the wrong margin figure.",
       logEntries: [{ output: "entry-1" }, { output: "entry-2" }],
@@ -216,6 +219,7 @@ describe("generateBlockerStatement", () => {
 
   it("passes the assessment id and brand id into the verify prompt closure", async () => {
     mockGenerateWithVerification.mockResolvedValue({
+      modelCalls: [],
       status: "final",
       text: "Blocker text.",
       logEntries: [],
