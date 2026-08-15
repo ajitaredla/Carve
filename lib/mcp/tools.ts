@@ -45,6 +45,10 @@ import {
   WaterfallInputError,
 } from "@/lib/waterfall/calculator";
 import type { InvestorVerdict } from "@/lib/waterfall/types";
+import {
+  parseRetailerRequirements,
+  resolveCategoryRequirements,
+} from "@/lib/scoring/map-retailer-requirements";
 
 const SERVER_NAME = "carve-mcp-server";
 const SERVER_VERSION = "1.0.0";
@@ -168,6 +172,19 @@ const GetRetailerRequirementsInput = z
       .describe(
         'The Retailer\'s unique slug (Retailer.slug), e.g. "whole-foods" or "sprouts".',
       ),
+    category: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "The brand's product category (Brand.category, e.g. \"Shelf-stable " +
+          "snacks\") — pass this so category-specific requirements are " +
+          "returned when the retailer has them (see get_brand_context's " +
+          "output for the brand's category). If omitted, or if this " +
+          "retailer has no override for the given category, the retailer's " +
+          "default requirements are returned — check `matchedCategory` in " +
+          "the response to see which one you actually got.",
+      ),
   })
   .strict();
 
@@ -176,11 +193,23 @@ const GetRetailerRequirementsOutput = z
     requirements: z
       .unknown()
       .describe(
-        "Retailer.requirements JSON blob — retailer-specific certification/" +
-          "margin/timing/velocity/fulfillment requirements. Shape is " +
-          "retailer-defined (see lib/scoring/map-retailer-requirements.ts " +
-          "for how Carve's own scoring engine parses it) — do not assume a " +
-          "fixed schema beyond what's actually present.",
+        "The RESOLVED requirements that apply — already narrowed to the " +
+          "requested category if this retailer has a category-specific " +
+          "override (see `matchedCategory`), otherwise the retailer's " +
+          "default requirements. Certification/margin/timing/velocity/" +
+          "fulfillment shape — see lib/scoring/map-retailer-requirements.ts " +
+          "for how Carve's own scoring engine parses it.",
+      ),
+    matchedCategory: z
+      .string()
+      .nullable()
+      .describe(
+        "The category-specific override that was actually matched, or " +
+          "null if the default (non-category-specific) requirements were " +
+          "used instead — either because no `category` was passed, or this " +
+          "retailer has no override for it. Cite this when stating " +
+          "category-specific requirements to a founder, so it's clear " +
+          "whether the figures are category-specific or a general default.",
       ),
     retailerDataVersion: z
       .string()
@@ -205,8 +234,14 @@ function registerGetRetailerRequirements(server: McpServer): void {
         "retailer's policies, prices, or programs — never rely on prior " +
         "knowledge of a retailer's requirements, they change and this tool " +
         "is the current source of truth.\n\n" +
-        "Returns: { requirements, retailerDataVersion }. Returns an error " +
-        "result if no retailer exists with the given slug.",
+        "ALWAYS pass `category` (the brand's product category, from " +
+        "get_brand_context) when you have it — some retailers require " +
+        "different margins/certifications for different product categories, " +
+        "and this tool will silently return the wrong (generic) numbers if " +
+        "category isn't passed even when a category-specific override " +
+        "exists.\n\n" +
+        "Returns: { requirements, matchedCategory, retailerDataVersion }. " +
+        "Returns an error result if no retailer exists with the given slug.",
       // Pass the full Zod object (not `.shape`) so `.strict()` is actually
       // enforced at runtime. The MCP SDK accepts either a raw shape or a
       // full schema instance (`AnySchema`) here; a raw shape gets rebuilt
@@ -224,7 +259,7 @@ function registerGetRetailerRequirements(server: McpServer): void {
         openWorldHint: false,
       },
     },
-    ({ retailerSlug }): Promise<CallToolResult> =>
+    ({ retailerSlug, category }): Promise<CallToolResult> =>
       safeToolCall("get_retailer_requirements", async () => {
         const retailer = await prisma.retailer.findUnique({
           where: { slug: retailerSlug },
@@ -239,8 +274,20 @@ function registerGetRetailerRequirements(server: McpServer): void {
           );
         }
 
+        // Same resolution helper the scoring engine uses (lib/scoring/
+        // map-retailer-requirements.ts) — so what the agent verifies
+        // against and what actually scored the brand are guaranteed to
+        // agree, not two independently-drifting implementations of
+        // "which requirements apply to this category."
+        const parsed = parseRetailerRequirements(retailer);
+        const { resolved, matchedCategory } = resolveCategoryRequirements(
+          parsed,
+          category,
+        );
+
         return jsonResult({
-          requirements: retailer.requirements,
+          requirements: resolved,
+          matchedCategory,
           retailerDataVersion: retailer.updatedAt.toISOString(),
         });
       }),
@@ -495,7 +542,11 @@ function registerGetBrandContext(server: McpServer): void {
         "`latestAssessment: null` if the brand has no assessment yet, and " +
         "`latestAssessment.costWaterfall: null` if that assessment has no " +
         "waterfall calculated yet. Returns an error result if no brand " +
-        "exists with the given id.",
+        "exists with the given id.\n\n" +
+        "Pass brand.category from this tool's response as the `category` " +
+        "argument to get_retailer_requirements — some retailers require " +
+        "different figures per product category, and omitting it can " +
+        "return the wrong (generic) requirements.",
       // Full schema instance, not `.shape` — see get_retailer_requirements'
       // registration above for why (`.strict()` is otherwise a no-op).
       inputSchema: GetBrandContextInput,
@@ -679,6 +730,7 @@ const GetVerificationFactsOutput = z
     // agents/carve-verifier.agent.yaml's system prompt for the matching
     // "which field to use for which claim" instruction.
     brand: z.object({
+      category: z.string(),
       wholesalePrice: z.number(),
       retailPrice: z.number(),
     }),
@@ -709,9 +761,11 @@ function registerGetVerificationFacts(server: McpServer): void {
         "deadline). Those are normalized into 0-100 dimension scores here, " +
         "not returned as raw facts. To verify a claim like \"Whole Foods " +
         "requires 42% minimum margin,\" you must ALSO call " +
-        "get_retailer_requirements(retailerSlug) — the retailerSlug is in " +
-        "this tool's response — and check the claim against the raw " +
-        "requirements JSON it returns.\n\n" +
+        "get_retailer_requirements(retailerSlug, category) — pass " +
+        "brand.category from THIS tool's response as `category`, since some " +
+        "retailers require different figures per product category, and the " +
+        "retailerSlug is also in this tool's response — then check the " +
+        "claim against the raw requirements JSON it returns.\n\n" +
         "This tool returns what's actually in the database, never a fresh " +
         "recomputation — if you need to re-run the waterfall math itself, " +
         "use run_waterfall_calculator with these exact inputs instead.\n\n" +
@@ -808,6 +862,7 @@ function registerGetVerificationFacts(server: McpServer): void {
             createdAt: assessment.createdAt.toISOString(),
           },
           brand: {
+            category: assessment.brand.category,
             wholesalePrice: decimalToNumber(assessment.brand.wholesalePrice),
             retailPrice: decimalToNumber(assessment.brand.retailPrice),
           },
